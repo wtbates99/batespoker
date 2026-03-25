@@ -4,7 +4,7 @@
 
 A self-hosted, open-source Texas Hold'em poker application inspired by **Poker Night at the Inventory**. Play against four degenerate AI characters with distinct personalities, or host a private table and deal in your friends in real-time.
 
-**Live demo:** [poker.palanbates.com](https://poker.palanbates.com) · **Part of [palanbates](https://palanbates.com) — RUNE_006**
+**Live demo:** [poker.palanbates.com](https://poker.palanbates.com)
 
 ---
 
@@ -99,9 +99,7 @@ Next.js 14 (App Router)
     └── engine.ts — Texas Hold'em state machine
 ```
 
-**Stack:** Next.js 14 · TypeScript · Socket.IO · SQLite · Tailwind CSS · framer-motion
-
-**Deployment:** Docker → GHCR → Watchtower auto-deploy · Cloudflare Tunnel
+**Stack:** Next.js 14 · TypeScript · Socket.IO · SQLite · Tailwind CSS
 
 ---
 
@@ -119,16 +117,10 @@ npm run build     # production build
 
 ## CI/CD
 
-- **CI** (`.github/workflows/ci.yml`): lint → typecheck → build on every push/PR
-- **Docker** (`.github/workflows/docker-publish.yml`): builds and pushes `ghcr.io/wtbates99/batespoker:latest` on push to `main`
-- **Auto-deploy**: Watchtower polls GHCR every 5 minutes and redeploys on new `:latest`
+Pushing to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/wtbates99/batespoker:latest`.
 
 ---
 
 ## License
 
 MIT — see [LICENSE](LICENSE)
-
----
-
-*♠ RUNE_006 · part of [palanbates.com](https://palanbates.com)*
