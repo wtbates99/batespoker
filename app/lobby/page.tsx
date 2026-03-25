@@ -12,22 +12,16 @@ export default function LobbyPage() {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [publicRooms, setPublicRooms] = useState<{ id: string; players: number; maxPlayers: number }[]>([])
   const [error, setError] = useState('')
-  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => {
       if (d.user) setPlayerName(d.user.username)
     }).catch(() => {})
 
+    // Socket only used to poll open rooms list
     const s = io({ path: '/api/socket.io' })
-    s.on('connect', () => { s.emit('get_rooms') })
-    s.on('rooms_list', (rooms: { id: string; players: number; maxPlayers: number }[]) => {
-      setPublicRooms(rooms)
-    })
-    s.on('room_joined', (data: { roomId: string }) => {
-      router.push(`/game/${data.roomId}`)
-    })
-    s.on('error', (e: { message: string }) => { setError(e.message); setCreating(false) })
+    s.on('connect', () => s.emit('get_rooms'))
+    s.on('rooms_list', (rooms: { id: string; players: number; maxPlayers: number }[]) => setPublicRooms(rooms))
     setSocket(s)
 
     const iv = setInterval(() => s.emit('get_rooms'), 5000)
@@ -35,18 +29,15 @@ export default function LobbyPage() {
   }, [])
 
   function createRoom() {
-    if (!socket) return
-    setCreating(true)
-    setError('')
-    socket.emit('create_room', { playerName })
+    // Navigate to game page with 'new' — the game page owns room creation
+    router.push(`/game/new?name=${encodeURIComponent(playerName)}`)
   }
 
   function joinRoom(code?: string) {
-    if (!socket) return
     const roomId = (code ?? joinCode).trim().toUpperCase()
     if (!roomId || roomId.length !== 6) { setError('Enter a valid 6-character room code.'); return }
     setError('')
-    socket.emit('join_room', { roomId, playerName })
+    router.push(`/game/${roomId}?name=${encodeURIComponent(playerName)}`)
   }
 
   return (
@@ -103,10 +94,9 @@ export default function LobbyPage() {
             <button
               className="btn-primary"
               onClick={createRoom}
-              disabled={creating}
               style={{ fontSize: '0.75rem', letterSpacing: '0.12em' }}
             >
-              {creating ? 'Creating...' : '♠ Create Table'}
+              ♠ Create Table
             </button>
           </div>
 
