@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { GameState, Player, ValidActions, getValidActions } from '@/lib/poker/engine'
+import { useEffect, useState, useRef } from 'react'
+import { GameState, Player, getValidActions } from '@/lib/poker/engine'
 import Card, { CardSlot } from './Card'
 import BettingControls from './BettingControls'
 
@@ -19,6 +19,13 @@ const CHARACTER_EMOJIS: Record<string, string> = {
   the_jester:      '🃏',
 }
 
+const CHARACTER_COLORS: Record<string, string> = {
+  baron_von_chips: 'var(--baron-color)',
+  lucky_mcgee:     'var(--lucky-color)',
+  the_duchess:     'var(--duchess-color)',
+  the_jester:      'var(--jester-color)',
+}
+
 const CHARACTER_CLASSES: Record<string, string> = {
   baron_von_chips: 'baron',
   lucky_mcgee:     'lucky',
@@ -26,100 +33,115 @@ const CHARACTER_CLASSES: Record<string, string> = {
   the_jester:      'jester',
 }
 
-// Seat positions as percentages for an oval table
-// Seats are positioned around the oval
+// Seat positions as % of table wrapper — seats are OUTSIDE the oval
+// so they never get clipped. Points along an ellipse, bottom = human seat.
 const SEAT_POSITIONS = [
-  { bottom: '2%',  left: '50%',  transform: 'translateX(-50%)' },  // 0: bottom center (human)
-  { bottom: '15%', left: '10%',  transform: 'none' },               // 1: bottom left
-  { top: '15%',    left: '5%',   transform: 'none' },               // 2: top left
-  { top: '2%',     left: '50%',  transform: 'translateX(-50%)' },   // 3: top center
-  { top: '15%',    right: '5%',  transform: 'none' },               // 4: top right
-  { bottom: '15%', right: '10%', transform: 'none' },               // 5: bottom right
+  { bottom: '-4%',  left: '50%',  transform: 'translateX(-50%)' },   // 0: bottom (human)
+  { bottom: '8%',   left: '4%',   transform: 'none' },               // 1: bottom-left
+  { top: '12%',     left: '2%',   transform: 'none' },               // 2: top-left
+  { top: '-4%',     left: '50%',  transform: 'translateX(-50%)' },   // 3: top (far end)
+  { top: '12%',     right: '2%',  transform: 'none' },               // 4: top-right
+  { bottom: '8%',   right: '4%',  transform: 'none' },               // 5: bottom-right
 ]
 
 export default function PokerTable({ gameState, currentPlayerId, onAction, dialogue }: PokerTableProps) {
-  const [dialogueVisible, setDialogueVisible] = useState<string | null>(null)
-  const [dialogueText, setDialogueText] = useState('')
-  const [dialogueChar, setDialogueChar] = useState('')
+  const [dialogueState, setDialogueState] = useState<{
+    characterId: string; text: string; name: string
+  } | null>(null)
+  const [winnerVisible, setWinnerVisible] = useState(false)
+  const dialogueTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (dialogue) {
-      setDialogueVisible(dialogue.characterId)
-      setDialogueText(dialogue.text)
-      setDialogueChar(dialogue.characterId)
-      const t = setTimeout(() => setDialogueVisible(null), 4000)
-      return () => clearTimeout(t)
+      if (dialogueTimer.current) clearTimeout(dialogueTimer.current)
+      setDialogueState({ characterId: dialogue.characterId, text: dialogue.text, name: dialogue.playerName })
+      dialogueTimer.current = setTimeout(() => setDialogueState(null), 4200)
     }
+    return () => { if (dialogueTimer.current) clearTimeout(dialogueTimer.current) }
   }, [dialogue])
+
+  useEffect(() => {
+    if (gameState.stage === 'showdown' && gameState.winners && gameState.winners.length > 0) {
+      setWinnerVisible(true)
+    } else {
+      setWinnerVisible(false)
+    }
+  }, [gameState.stage, gameState.winners])
 
   const currentPlayer = gameState.players.find(p => p.id === currentPlayerId)
   const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.id === currentPlayerId &&
     gameState.stage !== 'showdown' && gameState.stage !== 'ended' && gameState.stage !== 'waiting'
-
   const validActions = currentPlayer ? getValidActions(gameState, currentPlayerId) : null
-
   const totalPot = gameState.pot + gameState.players.reduce((s, p) => s + (p.currentBet || 0), 0)
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', maxWidth: 900, margin: '0 auto' }}>
+  const numPlayers = gameState.players.length
+  const seats = SEAT_POSITIONS.slice(0, Math.max(numPlayers, 2))
 
-      {/* Pot info */}
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 860, margin: '0 auto' }}>
+
+      {/* Stage + round info bar */}
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '8px 16px',
-        background: 'var(--vault-panel)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '6px 14px',
+        background: 'rgba(12,14,9,0.9)',
         border: '1px solid var(--border)',
-        borderRadius: 6,
-        fontSize: '0.72rem',
+        borderRadius: 5,
+        fontSize: '0.68rem',
+        letterSpacing: '0.08em',
       }}>
-        <span style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-          Stage: <span style={{ color: 'var(--text)' }}>{gameState.stage.toUpperCase()}</span>
+        <span style={{ color: 'var(--text-muted)' }}>
+          ROUND <span style={{ color: 'var(--text-dim)' }}>{gameState.round}</span>
         </span>
-        <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: '0.85rem' }}>
-          ♠ POT: {totalPot}
+        <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: '0.82rem' }}>
+          ♠ {totalPot}
         </span>
-        <span style={{ color: 'var(--text-dim)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-          Round {gameState.round}
+        <span style={{ color: 'var(--text-muted)' }}>
+          {gameState.stage.toUpperCase()}
+          {gameState.currentBet > 0 && (
+            <span style={{ color: 'var(--text-dim)', marginLeft: 8 }}>· bet {gameState.currentBet}</span>
+          )}
         </span>
       </div>
 
-      {/* TABLE */}
-      <div style={{ position: 'relative', paddingBottom: '56%' }}>
+      {/* TABLE WRAPPER — seats positioned relative to this, not inside the oval */}
+      <div style={{ position: 'relative', paddingBottom: '52%', userSelect: 'none' }}>
+
+        {/* THE OVAL TABLE */}
         <div style={{
           position: 'absolute',
-          inset: 0,
-          background: 'radial-gradient(ellipse at 50% 40%, #0d2814 0%, #0a2010 60%, #071508 100%)',
+          top: '8%', left: '8%', right: '8%', bottom: '8%',
+          background: 'radial-gradient(ellipse at 50% 35%, #0f2e18 0%, #0a2010 55%, #060e08 100%)',
           borderRadius: '50%',
-          border: '8px solid #2d1f12',
+          border: '10px solid #1e150b',
           boxShadow: `
-            inset 0 0 80px rgba(0,0,0,0.6),
-            inset 0 0 30px rgba(20,100,40,0.06),
-            0 0 0 2px rgba(201,168,76,0.10),
-            0 0 60px rgba(0,0,0,0.8)
+            inset 0 0 100px rgba(0,0,0,0.7),
+            inset 0 0 40px rgba(201,168,76,0.03),
+            0 0 0 2px rgba(201,168,76,0.08),
+            0 0 0 4px rgba(0,0,0,0.5),
+            0 8px 40px rgba(0,0,0,0.9),
+            0 20px 80px rgba(0,0,0,0.6)
           `,
-          overflow: 'hidden',
         }}>
-          {/* Felt texture */}
+          {/* Felt weave texture */}
           <div style={{
-            position: 'absolute', inset: 0,
-            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.002) 10px, rgba(255,255,255,0.002) 20px)',
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            backgroundImage: `
+              repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255,255,255,0.007) 3px, rgba(255,255,255,0.007) 4px),
+              repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,0.005) 3px, rgba(255,255,255,0.005) 4px)
+            `,
           }} />
-
-          {/* Lamp glow */}
+          {/* Overhead lamp */}
           <div style={{
-            position: 'absolute', top: '-10%', left: '50%', transform: 'translateX(-50%)',
-            width: '60%', height: '60%',
-            background: 'radial-gradient(ellipse at 50% 0%, rgba(201,168,76,0.05) 0%, transparent 70%)',
+            position: 'absolute', top: '-15%', left: '50%', transform: 'translateX(-50%)',
+            width: '70%', height: '70%',
+            background: 'radial-gradient(ellipse at 50% 0%, rgba(201,168,76,0.07) 0%, transparent 65%)',
             pointerEvents: 'none',
           }} />
-
-          {/* Table border ring */}
+          {/* Inner ring */}
           <div style={{
-            position: 'absolute', inset: 8,
-            borderRadius: '50%',
-            border: '1px solid rgba(201,168,76,0.07)',
+            position: 'absolute', inset: 12, borderRadius: '50%',
+            border: '1px solid rgba(201,168,76,0.06)',
             pointerEvents: 'none',
           }} />
 
@@ -129,164 +151,218 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
             transform: 'translate(-50%, -50%)',
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
           }}>
-            {/* Community cards */}
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
               {Array.from({ length: 5 }).map((_, i) => {
                 const card = gameState.communityCards[i]
                 return card
-                  ? <Card key={i} card={card} size="md" />
+                  ? <Card key={i} card={card} size="md" style={{ animation: 'deal-in 0.25s ease' }} />
                   : <CardSlot key={i} size="md" />
               })}
             </div>
-            {/* Pot */}
             <div style={{
-              fontSize: '0.72rem',
-              color: 'var(--gold)',
-              letterSpacing: '0.12em',
-              fontWeight: 700,
-              textShadow: '0 0 10px rgba(201,168,76,0.4)',
+              fontSize: '0.7rem', color: 'var(--gold)',
+              letterSpacing: '0.15em', fontWeight: 700,
+              textShadow: '0 0 12px rgba(201,168,76,0.5)',
             }}>
               ♠ {totalPot}
             </div>
-            {/* Current bet */}
-            {gameState.currentBet > 0 && (
-              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
-                bet: {gameState.currentBet}
-              </div>
-            )}
           </div>
+        </div>
 
-          {/* PLAYER SEATS */}
-          {gameState.players.map((player, idx) => {
-            const seatPos = SEAT_POSITIONS[idx % SEAT_POSITIONS.length]
-            const isCurrentTurn = gameState.players[gameState.currentPlayerIndex]?.id === player.id
-            const charClass = player.characterId ? CHARACTER_CLASSES[player.characterId] ?? 'human' : 'human'
-            const emoji = player.characterId ? CHARACTER_EMOJIS[player.characterId] : player.name.charAt(0).toUpperCase()
-            const showDialogue = dialogueVisible === player.characterId
+        {/* PLAYER SEATS — outside the oval, no clipping */}
+        {gameState.players.map((player, idx) => {
+          const seatPos = seats[idx % seats.length]
+          const isCurrentTurn = gameState.players[gameState.currentPlayerIndex]?.id === player.id
+          const charClass = player.characterId ? CHARACTER_CLASSES[player.characterId] ?? 'human' : 'human'
+          const charColor = player.characterId ? CHARACTER_COLORS[player.characterId] : 'var(--gold)'
+          const emoji = player.characterId ? CHARACTER_EMOJIS[player.characterId] : player.name.charAt(0).toUpperCase()
+          const showDialogue = dialogueState?.characterId === player.characterId
+          const isMe = player.id === currentPlayerId
+          const isTurn = isCurrentTurn && player.status === 'active'
 
-            return (
-              <div key={player.id} className="player-seat" style={{ ...seatPos as React.CSSProperties, position: 'absolute', zIndex: 10 }}>
-                {/* Dialogue */}
-                {showDialogue && (
-                  <div className={`dialogue-bubble ${charClass}`} style={{ bottom: '100%', transform: 'none', left: '-60px', right: '-60px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>
-                      {player.name}
-                    </span>
-                    {dialogueText}
-                  </div>
-                )}
-
-                {/* Portrait */}
-                <div className={`seat-portrait ${charClass} ${isCurrentTurn && player.status === 'active' ? 'active-turn' : ''} ${player.status === 'folded' ? 'folded' : ''} ${player.status === 'allin' ? 'allin' : ''}`}>
-                  <span style={{ fontSize: '1.1rem' }}>{emoji}</span>
-                  {player.isDealer && (
-                    <div style={{
-                      position: 'absolute', bottom: -2, right: -2,
-                      width: 14, height: 14, borderRadius: '50%',
-                      background: 'var(--gold)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.5rem', fontWeight: 700, color: '#030503',
-                    }}>D</div>
-                  )}
-                  {isCurrentTurn && player.status === 'active' && player.isAI && (
-                    <div style={{
-                      position: 'absolute', top: -2, right: -2,
-                      background: 'rgba(201,168,76,0.9)',
-                      borderRadius: 10,
-                      padding: '1px 4px',
-                      fontSize: '0.45rem',
-                      fontWeight: 700,
-                      color: '#030503',
-                      letterSpacing: '0.05em',
-                    }}>...</div>
-                  )}
+          return (
+            <div
+              key={player.id}
+              style={{
+                position: 'absolute',
+                ...seatPos as React.CSSProperties,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 3,
+                zIndex: 20,
+                minWidth: 80,
+              }}
+            >
+              {/* Dialogue bubble */}
+              {showDialogue && dialogueState && (
+                <div
+                  className={`dialogue-bubble ${charClass}`}
+                  style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 10px)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    animation: 'deal-in 0.2s ease',
+                  }}
+                >
+                  <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>
+                    {dialogueState.name}
+                  </span>
+                  {dialogueState.text}
                 </div>
+              )}
 
-                {/* Name + chips */}
-                <div className="seat-name" style={{ color: player.id === currentPlayerId ? 'var(--gold)' : undefined }}>
-                  {player.name}
-                  {player.isSmallBlind && ' SB'}
-                  {player.isBigBlind && ' BB'}
-                </div>
-                <div className="seat-chips">{player.chips} ♠</div>
-                {player.currentBet > 0 && (
-                  <div className="seat-bet">bet: {player.currentBet}</div>
+              {/* Portrait circle */}
+              <div
+                className={`seat-portrait ${charClass} ${isTurn ? 'active-turn' : ''} ${player.status === 'folded' ? 'folded' : ''} ${player.status === 'allin' ? 'allin' : ''}`}
+                style={{ '--char-color': charColor } as React.CSSProperties}
+              >
+                <span style={{ fontSize: '1.2rem' }}>{emoji}</span>
+                {player.isDealer && (
+                  <div style={{
+                    position: 'absolute', bottom: -3, right: -3,
+                    width: 16, height: 16, borderRadius: '50%',
+                    background: 'var(--gold)', color: '#020302',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.5rem', fontWeight: 900, letterSpacing: 0,
+                    boxShadow: '0 0 6px rgba(201,168,76,0.6)',
+                  }}>D</div>
                 )}
-                {player.status === 'folded' && (
-                  <div className="seat-status-badge badge-folded">FOLD</div>
-                )}
-                {player.status === 'allin' && (
-                  <div className="seat-status-badge badge-allin">ALL IN</div>
-                )}
-
-                {/* Hole cards */}
-                {player.holeCards.length > 0 && (
-                  <div className="seat-hole-cards">
-                    {player.holeCards.map((card, ci) => (
-                      <Card key={ci} card={card} size="sm" />
-                    ))}
-                  </div>
+                {isTurn && player.isAI && (
+                  <div style={{
+                    position: 'absolute', top: -4, right: -4,
+                    background: 'rgba(201,168,76,0.95)',
+                    borderRadius: 8, padding: '1px 5px',
+                    fontSize: '0.4rem', fontWeight: 700, color: '#020302',
+                    letterSpacing: '0.05em', animation: 'blink 0.8s step-end infinite',
+                  }}>THINKING</div>
                 )}
               </div>
-            )
-          })}
-        </div>
+
+              {/* Name */}
+              <div style={{
+                fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.08em',
+                textTransform: 'uppercase', color: isMe ? 'var(--gold)' : 'var(--text-dim)',
+                whiteSpace: 'nowrap', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis',
+                textAlign: 'center',
+              }}>
+                {player.name}
+                {player.isSmallBlind && <span style={{ color: 'var(--text-muted)', fontSize: '0.5rem' }}> SB</span>}
+                {player.isBigBlind && <span style={{ color: 'var(--text-muted)', fontSize: '0.5rem' }}> BB</span>}
+              </div>
+
+              {/* Chips */}
+              <div style={{
+                fontSize: '0.62rem', color: player.chips < 100 ? '#e07070' : 'var(--gold)',
+                fontWeight: 600, letterSpacing: '0.04em',
+              }}>
+                {player.chips} ♠
+              </div>
+
+              {/* Current bet */}
+              {player.currentBet > 0 && (
+                <div style={{
+                  fontSize: '0.55rem', color: 'var(--text-dim)',
+                  background: 'rgba(0,0,0,0.6)', padding: '1px 6px',
+                  borderRadius: 10, border: '1px solid var(--border)',
+                }}>
+                  {player.currentBet}
+                </div>
+              )}
+
+              {/* Status badges */}
+              {player.status === 'folded' && (
+                <div className="seat-status-badge badge-folded">FOLD</div>
+              )}
+              {player.status === 'allin' && (
+                <div className="seat-status-badge badge-allin">ALL IN</div>
+              )}
+
+              {/* Hole cards */}
+              {player.holeCards.length > 0 && (
+                <div style={{ display: 'flex', gap: 2, marginTop: 2 }}>
+                  {player.holeCards.map((card, ci) => (
+                    <Card key={ci} card={card} size="sm" />
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
-      {/* WINNER OVERLAY */}
-      {gameState.stage === 'showdown' && gameState.winners && gameState.winners.length > 0 && (
+      {/* WINNER ANNOUNCEMENT */}
+      {winnerVisible && gameState.winners && gameState.winners.length > 0 && (
         <div style={{
-          background: 'var(--vault-panel)',
-          border: '1px solid rgba(201,168,76,0.4)',
+          background: 'rgba(8,12,6,0.97)',
+          border: '1px solid rgba(201,168,76,0.35)',
           borderRadius: 8,
-          padding: '16px 20px',
+          padding: '18px 24px',
           textAlign: 'center',
-          boxShadow: '0 0 30px rgba(201,168,76,0.1)',
+          boxShadow: '0 0 40px rgba(201,168,76,0.12), inset 0 0 30px rgba(0,0,0,0.4)',
+          animation: 'winner-pop 0.35s ease',
         }}>
-          <div style={{ fontSize: '0.6rem', letterSpacing: '0.2em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8 }}>
-            ♠ showdown ♠
+          <div style={{ fontSize: '0.58rem', letterSpacing: '0.25em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
+            ♠ SHOWDOWN ♠
           </div>
           {gameState.winners.map((w, i) => {
             const wPlayer = gameState.players.find(p => p.id === w.playerId)
+            const isWinnerMe = w.playerId === currentPlayerId
             return (
-              <div key={i} style={{ marginBottom: 8 }}>
-                <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: '1rem' }}>{wPlayer?.name ?? w.playerId}</span>
-                <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem', marginLeft: 8 }}>
-                  wins {w.amount} · {w.handName}
+              <div key={i} style={{ marginBottom: i < gameState.winners!.length - 1 ? 10 : 0 }}>
+                <span style={{
+                  color: isWinnerMe ? '#7de87d' : 'var(--gold)',
+                  fontWeight: 700, fontSize: '1.1rem',
+                  textShadow: `0 0 20px ${isWinnerMe ? 'rgba(125,232,125,0.5)' : 'rgba(201,168,76,0.5)'}`,
+                }}>
+                  {wPlayer?.name ?? w.playerId}
+                </span>
+                <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem', marginLeft: 10 }}>
+                  +{w.amount} · <span style={{ color: 'var(--text-muted)' }}>{w.handName}</span>
                 </span>
               </div>
             )
           })}
+          {/* Show community + winner cards */}
+          {gameState.communityCards.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+              {gameState.communityCards.map((card, i) => (
+                <Card key={i} card={card} size="sm" />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* YOUR HOLE CARDS (prominent) */}
+      {/* YOUR HOLE CARDS */}
       {currentPlayer && currentPlayer.holeCards.length > 0 && gameState.stage !== 'waiting' && (
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
+          display: 'flex', alignItems: 'center', gap: 16,
           padding: '12px 20px',
-          background: 'var(--vault-panel)',
-          border: '1px solid var(--border)',
+          background: 'rgba(8,12,6,0.95)',
+          border: `1px solid ${isMyTurn ? 'rgba(201,168,76,0.4)' : 'var(--border)'}`,
           borderRadius: 8,
+          boxShadow: isMyTurn ? '0 0 20px rgba(201,168,76,0.1)' : 'none',
+          transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
         }}>
-          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase', minWidth: 80 }}>
+          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', minWidth: 72 }}>
             Your Hand
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
             {currentPlayer.holeCards.map((card, i) => (
               <Card key={i} card={card} size="lg" />
             ))}
           </div>
-          <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginLeft: 'auto' }}>
-            {currentPlayer.chips} chips
+          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 2 }}>stack</div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 700 }}>{currentPlayer.chips}</div>
           </div>
         </div>
       )}
 
       {/* BETTING CONTROLS */}
-      {validActions && gameState.stage !== 'showdown' && gameState.stage !== 'ended' && (
+      {validActions && gameState.stage !== 'showdown' && gameState.stage !== 'ended' && gameState.stage !== 'waiting' && (
         <BettingControls
           validActions={validActions}
           potSize={totalPot}
@@ -296,20 +372,25 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
         />
       )}
 
-      {/* ENDED */}
+      {/* GAME OVER */}
       {gameState.stage === 'ended' && (
         <div style={{
-          textAlign: 'center',
-          padding: '24px',
-          background: 'var(--vault-panel)',
-          border: '1px solid var(--border)',
+          textAlign: 'center', padding: '28px',
+          background: 'rgba(8,12,6,0.97)',
+          border: '1px solid rgba(201,168,76,0.3)',
           borderRadius: 8,
+          animation: 'winner-pop 0.4s ease',
         }}>
-          <div style={{ fontSize: '1rem', color: 'var(--gold)', fontWeight: 700, marginBottom: 8 }}>
-            ♠ Game Over ♠
+          <div style={{ fontSize: '1.2rem', color: 'var(--gold)', fontWeight: 700, marginBottom: 10, letterSpacing: '0.05em' }}>
+            ♠ The Vault Closes ♠
           </div>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-            {gameState.players.filter(p => p.chips > 0).map(p => p.name)[0]} takes the vault.
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: 6 }}>
+            {(gameState.players.find(p => p.chips > 0)?.name ?? '—')} takes everything.
+          </div>
+          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+            {gameState.players.find(p => p.id === currentPlayerId)?.chips ?? 0 > 0
+              ? 'Well played.'
+              : 'The house always wins.'}
           </div>
         </div>
       )}

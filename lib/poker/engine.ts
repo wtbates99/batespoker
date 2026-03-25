@@ -16,6 +16,7 @@ export interface Player {
   status: PlayerStatus
   currentBet: number
   totalBetThisRound: number
+  totalBetThisHand: number
   isDealer: boolean
   isSmallBlind: boolean
   isBigBlind: boolean
@@ -85,6 +86,7 @@ export function createGame(config: CreateGameConfig): GameState {
     status: 'active',
     currentBet: 0,
     totalBetThisRound: 0,
+    totalBetThisHand: 0,
     isDealer: false,
     isSmallBlind: false,
     isBigBlind: false,
@@ -132,6 +134,7 @@ export function startRound(state: GameState): GameState {
     status: p.chips > 0 ? 'active' : 'out',
     currentBet: 0,
     totalBetThisRound: 0,
+    totalBetThisHand: 0,
     isDealer: false,
     isSmallBlind: false,
     isBigBlind: false,
@@ -168,11 +171,13 @@ export function startRound(state: GameState): GameState {
   s.players[sbIndex].chips -= sbAmount
   s.players[sbIndex].currentBet = sbAmount
   s.players[sbIndex].totalBetThisRound = sbAmount
+  s.players[sbIndex].totalBetThisHand = sbAmount
   if (s.players[sbIndex].chips === 0) s.players[sbIndex].status = 'allin'
 
   s.players[bbIndex].chips -= bbAmount
   s.players[bbIndex].currentBet = bbAmount
   s.players[bbIndex].totalBetThisRound = bbAmount
+  s.players[bbIndex].totalBetThisHand = bbAmount
   if (s.players[bbIndex].chips === 0) s.players[bbIndex].status = 'allin'
 
   s.pot = sbAmount + bbAmount
@@ -288,6 +293,7 @@ export function processAction(
       player.chips -= callAmount
       player.currentBet += callAmount
       player.totalBetThisRound += callAmount
+      player.totalBetThisHand += callAmount
       s.pot += callAmount
       if (player.chips === 0) player.status = 'allin'
       break
@@ -295,11 +301,11 @@ export function processAction(
 
     case 'raise': {
       const raiseAmount = action.amount ?? s.minRaise
-      const totalBet = player.currentBet + raiseAmount
       const actualAmount = Math.min(raiseAmount, player.chips)
       player.chips -= actualAmount
       player.currentBet += actualAmount
       player.totalBetThisRound += actualAmount
+      player.totalBetThisHand += actualAmount
       s.pot += actualAmount
 
       if (player.chips === 0) {
@@ -319,6 +325,7 @@ export function processAction(
       const amount = player.chips
       player.currentBet += amount
       player.totalBetThisRound += amount
+      player.totalBetThisHand += amount
       s.pot += amount
       player.chips = 0
       player.status = 'allin'
@@ -469,8 +476,14 @@ function resolveShowdown(s: GameState): GameState {
     return s
   }
 
-  // Calculate side pots
-  const pots = calculatePots(s.players)
+  // Calculate side pots — if only one contender per pot with no all-ins, use s.pot directly
+  const hasAllIn = contenders.some(p => p.status === 'allin')
+  let pots = calculatePots(s.players)
+  // Sanity check: pots total should equal s.pot
+  const potsTotal = pots.reduce((sum, p) => sum + p.amount, 0)
+  if (!hasAllIn || potsTotal === 0) {
+    pots = [{ amount: s.pot, eligiblePlayers: contenders.map(p => p.id) }]
+  }
   const winners: Winner[] = []
 
   for (const pot of pots) {
@@ -510,12 +523,12 @@ function resolveShowdown(s: GameState): GameState {
 
 function calculatePots(players: Player[]): SidePot[] {
   const contributions = players
-    .filter(p => p.totalBetThisRound > 0 || (p.status !== 'folded' && p.status !== 'out'))
-    .map(p => ({ id: p.id, amount: p.totalBetThisRound, status: p.status }))
+    .filter(p => p.totalBetThisHand > 0 || (p.status !== 'folded' && p.status !== 'out'))
+    .map(p => ({ id: p.id, amount: p.totalBetThisHand, status: p.status }))
     .sort((a, b) => a.amount - b.amount)
 
   if (contributions.length === 0) {
-    const total = players.reduce((sum, p) => sum + (p.totalBetThisRound || 0), 0)
+    const total = players.reduce((sum, p) => sum + (p.totalBetThisHand || 0), 0)
     return [{ amount: total, eligiblePlayers: players.filter(p => p.status !== 'folded' && p.status !== 'out').map(p => p.id) }]
   }
 
@@ -631,6 +644,7 @@ export function prepareNextRound(state: GameState): GameState {
     p.isBigBlind = false
     p.currentBet = 0
     p.totalBetThisRound = 0
+    p.totalBetThisHand = 0
     if (p.chips <= 0) p.status = 'out'
     else p.status = 'active'
   }
