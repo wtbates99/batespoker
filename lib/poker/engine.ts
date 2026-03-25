@@ -603,6 +603,7 @@ export function processAIAction(state: GameState): { state: GameState; action: A
   // Get situational dialogue
   let dialogueSituation = 'general'
   if (action.type === 'fold') dialogueSituation = 'fold'
+  else if (action.isBluff) dialogueSituation = 'bluff'
   else if (action.type === 'raise' && action.amount && action.amount > state.pot * 0.8) dialogueSituation = 'bigRaise'
   else if (Math.random() < 0.2) dialogueSituation = 'general'
 

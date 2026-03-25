@@ -79,6 +79,7 @@ const BOOT_LINES = [
 export default function HomePage() {
   const router = useRouter()
   const [booted, setBooted] = useState(false)
+  const [showBoot, setShowBoot] = useState(true)
   const [user, setUser] = useState<{ username: string } | null>(null)
   const [showAuth, setShowAuth] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
@@ -100,6 +101,7 @@ export default function HomePage() {
     const alreadyBooted = sessionStorage.getItem('vault_booted')
     if (alreadyBooted) {
       setBooted(true)
+      setShowBoot(false)
       return
     }
     sessionStorage.setItem('vault_booted', '1')
@@ -135,7 +137,7 @@ export default function HomePage() {
     setTimeout(() => {
       if (bootEl) bootEl.classList.add('fade-out')
       setTimeout(() => {
-        if (bootEl) bootEl.style.display = 'none'
+        setShowBoot(false)
         setBooted(true)
       }, 700)
     }, 2700)
@@ -225,7 +227,7 @@ export default function HomePage() {
   return (
     <>
       {/* BOOT SCREEN */}
-      <div className="boot" id="boot-screen">
+      {showBoot && <div className="boot" id="boot-screen">
         <div className="boot-inner">
           <div className="boot-rune">♠ BATESPOKER ♠</div>
           <pre className="boot-lines" ref={bootRef} />
@@ -233,7 +235,7 @@ export default function HomePage() {
             <div className="boot-bar" ref={barRef} />
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* MAIN CONTENT */}
       <div style={{ opacity: booted ? 1 : 0, transition: 'opacity 0.5s ease 0.2s' }}>

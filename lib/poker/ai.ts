@@ -7,6 +7,7 @@ export type AIActionType = 'fold' | 'check' | 'call' | 'raise' | 'allin'
 export interface AIAction {
   type: AIActionType
   amount?: number
+  isBluff?: boolean
 }
 
 export interface AIContext {
@@ -206,35 +207,49 @@ function getHandStrength(holeCards: Card[], communityCards: Card[]): number {
     return preflopStrength(holeCards)
   }
   const result = bestHand(holeCards, communityCards)
-  // Normalize hand rank to 0-1
+  const tb = result.tiebreakers
+  // Normalize hand rank to 0-1 with finer granularity using tiebreakers
   switch (result.rank) {
     case HandRank.ROYAL_FLUSH:     return 1.00
-    case HandRank.STRAIGHT_FLUSH:  return 0.97
-    case HandRank.FOUR_OF_A_KIND:  return 0.94
-    case HandRank.FULL_HOUSE:      return 0.88
-    case HandRank.FLUSH:           return 0.80
-    case HandRank.STRAIGHT:        return 0.73
-    case HandRank.THREE_OF_A_KIND: return 0.63
-    case HandRank.TWO_PAIR:        return 0.52
-    case HandRank.PAIR:            return 0.38 + (result.tiebreakers[0] - 2) / 100
-    case HandRank.HIGH_CARD:       return 0.15 + (result.tiebreakers[0] - 2) / 80
+    case HandRank.STRAIGHT_FLUSH:  return 0.975 + (tb[0] ?? 0) / 1000
+    case HandRank.FOUR_OF_A_KIND:  return 0.940 + (tb[0] ?? 0) / 500
+    case HandRank.FULL_HOUSE:      return 0.870 + (tb[0] ?? 0) / 200   // 0.88-0.94
+    case HandRank.FLUSH:           return 0.790 + (tb[0] ?? 0) / 200   // 0.80-0.86
+    case HandRank.STRAIGHT:        return 0.720 + (tb[0] ?? 0) / 300   // 0.72-0.77
+    case HandRank.THREE_OF_A_KIND: return 0.625 + (tb[0] ?? 0) / 180   // 0.63-0.70
+    case HandRank.TWO_PAIR:        return 0.500 + (tb[0] ?? 0) / 140 + (tb[1] ?? 0) / 280  // 0.52-0.65
+    case HandRank.PAIR:            return 0.300 + (tb[0] ?? 0) / 50  + (tb[1] ?? 0) / 350  // 0.34-0.62
+    case HandRank.HIGH_CARD:       return 0.060 + (tb[0] ?? 0) / 90  + (tb[1] ?? 0) / 450  // 0.09-0.26
     default: return 0.20
   }
 }
 
-function hasDraw(holeCards: Card[], communityCards: Card[]): boolean {
-  if (communityCards.length < 3) return false
+// Draw equity: returns approximate winning equity from the draw (0 = no draw)
+function drawEquity(holeCards: Card[], communityCards: Card[]): number {
+  if (communityCards.length < 3) return 0
   const all = [...holeCards, ...communityCards]
+  let equity = 0
+  const onTurn = communityCards.length === 3  // 1 card to come after this vs 2
+
   // Flush draw: 4 of same suit
   const suitCounts: Record<string, number> = {}
   for (const c of all) suitCounts[c.suit] = (suitCounts[c.suit] || 0) + 1
-  if (Object.values(suitCounts).some(c => c === 4)) return true
-  // Straight draw: 4 consecutive or near-consecutive
-  const ranks = [...new Set(all.map(c => c.rank))].sort((a, b) => a - b)
-  for (let i = 0; i < ranks.length - 3; i++) {
-    if (ranks[i + 3] - ranks[i] <= 4) return true
+  if (Object.values(suitCounts).some(c => c === 4)) {
+    equity = Math.max(equity, onTurn ? 0.35 : 0.19)
   }
-  return false
+
+  const ranks = [...new Set(all.map(c => c.rank))].sort((a, b) => a - b)
+  for (let i = 0; i + 3 < ranks.length; i++) {
+    const span = ranks[i + 3] - ranks[i]
+    if (span === 3) {
+      // Open-ended straight draw
+      equity = Math.max(equity, onTurn ? 0.31 : 0.17)
+    } else if (span === 4) {
+      // Gutshot straight draw
+      equity = Math.max(equity, onTurn ? 0.16 : 0.09)
+    }
+  }
+  return equity
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -251,187 +266,271 @@ function randomBetween(min: number, max: number) {
 
 export function getAIAction(ctx: AIContext): AIAction {
   const { holeCards, communityCards, potSize, callAmount, minRaise, maxRaise,
-    stackSize, position, stage, difficulty, characterId } = ctx
+    stackSize, position, stage, difficulty, activePlayers } = ctx
 
   const strength = getHandStrength(holeCards, communityCards)
-  const draw = hasDraw(holeCards, communityCards)
+  const drawEq = drawEquity(holeCards, communityCards)
   const canCheck = callAmount === 0
-
-  // Pot odds (if we need to call)
   const potOdds = callAmount > 0 ? callAmount / (potSize + callAmount) : 0
+  const spr = potSize > 0 ? stackSize / potSize : 50  // stack-to-pot ratio
+
+  // Multi-way penalty: need stronger hands in multi-way pots
+  const multiWayPenalty = activePlayers > 2 ? (activePlayers - 2) * 0.04 : 0
+  const adjustedStrength = Math.max(0, strength - multiWayPenalty)
 
   switch (difficulty) {
     case 'easy':
-      return easyAI(strength, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize)
+      return easyAI(adjustedStrength, drawEq, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize)
     case 'medium':
-      return mediumAI(strength, draw, potOdds, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position)
+      return mediumAI(adjustedStrength, drawEq, potOdds, spr, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position, stage)
     case 'hard':
-      return hardAI(strength, draw, potOdds, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position, stage, characterId)
+      return hardAI(adjustedStrength, drawEq, potOdds, spr, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position, stage)
     case 'legendary':
-      return legendaryAI(strength, draw, potOdds, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position, stage)
+      return legendaryAI(adjustedStrength, drawEq, potOdds, spr, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position, stage)
     default:
-      return mediumAI(strength, draw, potOdds, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position)
+      return mediumAI(adjustedStrength, drawEq, potOdds, spr, canCheck, callAmount, minRaise, maxRaise, stackSize, potSize, position, stage)
   }
 }
 
 // ─── EASY: Lucky McGee ─────────────────────────────────────────
+// Calls way too much, raises randomly, gets excited by anything decent
 function easyAI(
-  strength: number, canCheck: boolean, callAmount: number,
+  strength: number, drawEq: number, canCheck: boolean, callAmount: number,
   minRaise: number, maxRaise: number, stackSize: number, potSize: number,
 ): AIAction {
   const rand = Math.random()
+
   if (canCheck) {
-    // Likes to check, occasionally raises with decent hands
-    if (strength > 0.7 && rand < 0.5) {
-      return { type: 'raise', amount: clamp(Math.floor(potSize * 0.5), minRaise, maxRaise) }
+    // Raise fairly often with decent hands (doesn't know pot sizing)
+    if (strength > 0.60 && rand < 0.55) {
+      return { type: 'raise', amount: clamp(Math.floor(potSize * randomBetween(0.4, 0.9)), minRaise, maxRaise) }
+    }
+    // Random donk bet ~12% of the time regardless of hand
+    if (rand < 0.12) {
+      return { type: 'raise', amount: clamp(Math.floor(potSize * randomBetween(0.25, 0.6)), minRaise, maxRaise) }
     }
     return { type: 'check' }
   }
-  // Calls too much — only folds with truly terrible hands
-  if (strength < 0.20 && rand < 0.50) return { type: 'fold' }
-  if (strength > 0.80 && rand < 0.30) {
-    return { type: 'raise', amount: clamp(Math.floor(potSize * 0.75), minRaise, maxRaise) }
+
+  // Lucky barely folds — only absolute air under real pressure
+  if (strength < 0.13 && drawEq < 0.08 && rand < 0.55) return { type: 'fold' }
+  if (strength < 0.08) return { type: 'fold' }
+
+  // Gets excited and raises with strong hands
+  if (strength > 0.72 && rand < 0.40) {
+    return { type: 'raise', amount: clamp(Math.floor(potSize * randomBetween(0.5, 1.0)), minRaise, maxRaise) }
   }
-  // Check if we can afford the call
-  if (callAmount > stackSize) return { type: 'allin' }
+
+  if (callAmount >= stackSize) return { type: 'allin' }
   return { type: 'call' }
 }
 
 // ─── MEDIUM: The Duchess ───────────────────────────────────────
+// Solid fundamentals, good pot odds, position-aware, infrequent bluffs
 function mediumAI(
-  strength: number, draw: boolean, potOdds: number, canCheck: boolean,
-  callAmount: number, minRaise: number, maxRaise: number, stackSize: number,
-  potSize: number, position: number,
+  strength: number, drawEq: number, potOdds: number, spr: number,
+  canCheck: boolean, callAmount: number, minRaise: number, maxRaise: number,
+  stackSize: number, potSize: number, position: number, stage: string,
 ): AIAction {
-  const positionBonus = position * 0.05
-  const effectiveStrength = strength + positionBonus
+  const posBonus = position * 0.06
+  const eff = clamp(strength + posBonus, 0, 1)
   const rand = Math.random()
 
+  // SPR adjustments: short-stack → polarize; deep → more speculative
+  const sprAdjusted = spr < 3 ? eff + 0.05 : spr > 12 ? eff - 0.03 : eff
+
   if (canCheck) {
-    if (effectiveStrength > 0.65) {
-      return { type: 'raise', amount: clamp(Math.floor(potSize * randomBetween(0.5, 1.0)), minRaise, maxRaise) }
+    if (sprAdjusted > 0.60) {
+      const sizeMult = stage === 'river' ? randomBetween(0.6, 1.0) : randomBetween(0.5, 0.9)
+      return { type: 'raise', amount: clamp(Math.floor(potSize * sizeMult), minRaise, maxRaise) }
     }
-    // Occasional bluff (15%)
-    if (rand < 0.15 && position === 2) {
-      return { type: 'raise', amount: clamp(Math.floor(potSize * 0.6), minRaise, maxRaise) }
+    // Pot-sized semi-bluff with strong draws from position
+    if (drawEq > 0.20 && position === 2 && rand < 0.30) {
+      return { type: 'raise', amount: clamp(Math.floor(potSize * 0.65), minRaise, maxRaise), isBluff: true }
+    }
+    // Late-position steal ~15%
+    if (position === 2 && stage !== 'river' && rand < 0.15) {
+      return { type: 'raise', amount: clamp(Math.floor(potSize * 0.55), minRaise, maxRaise), isBluff: true }
     }
     return { type: 'check' }
   }
 
-  // Fold with weak hands if pot odds don't justify calling
-  if (effectiveStrength < 0.30 && potOdds > 0.25) return { type: 'fold' }
-  if (effectiveStrength < 0.20) return { type: 'fold' }
-
-  // Semi-bluff with draws
-  if (draw && rand < 0.25 && position >= 1) {
-    return { type: 'raise', amount: clamp(Math.floor(potSize * 0.6), minRaise, maxRaise) }
+  // Pot odds + draw: call when draw equity covers the odds
+  if (drawEq > potOdds + 0.04 && rand < 0.80) {
+    if (callAmount >= stackSize) return { type: 'allin' }
+    return { type: 'call' }
   }
 
-  if (effectiveStrength > 0.75) {
-    return { type: 'raise', amount: clamp(Math.floor(potSize * randomBetween(0.7, 1.5)), minRaise, maxRaise) }
+  // Fold weak hands when pot odds don't justify
+  if (sprAdjusted < 0.28 && potOdds > 0.22) return { type: 'fold' }
+  if (sprAdjusted < 0.20) return { type: 'fold' }
+
+  // Low SPR commit: strong hand + committed → allin
+  if (spr < 2.5 && sprAdjusted > 0.55) return { type: 'allin' }
+
+  // Value raise with strong hands
+  if (sprAdjusted > 0.72) {
+    const sizeMult = stage === 'river' ? randomBetween(0.8, 1.4) : randomBetween(0.7, 1.2)
+    return { type: 'raise', amount: clamp(Math.floor((potSize + callAmount) * sizeMult), minRaise, maxRaise) }
   }
 
-  if (callAmount > stackSize * 0.8) return { type: 'allin' }
+  // Semi-bluff raise with draws in position
+  if (drawEq > 0.25 && position >= 1 && rand < 0.28) {
+    return { type: 'raise', amount: clamp(Math.floor(potSize * 0.65), minRaise, maxRaise), isBluff: true }
+  }
+
+  if (callAmount >= stackSize) return { type: 'allin' }
   return { type: 'call' }
 }
 
 // ─── HARD: Baron Von Chips ─────────────────────────────────────
+// Position play, heavy c-betting, polarized 3-bets, SPR-aware commitment
 function hardAI(
-  strength: number, draw: boolean, potOdds: number, canCheck: boolean,
-  callAmount: number, minRaise: number, maxRaise: number, stackSize: number,
-  potSize: number, position: number, stage: string, characterId: string,
+  strength: number, drawEq: number, potOdds: number, spr: number,
+  canCheck: boolean, callAmount: number, minRaise: number, maxRaise: number,
+  stackSize: number, potSize: number, position: number, stage: string,
 ): AIAction {
-  const positionBonus = position * 0.08
-  const stageBonus = stage === 'river' ? 0 : 0.03  // less speculative on river
-  const effectiveStrength = clamp(strength + positionBonus + stageBonus, 0, 1)
+  const posBonus = position * 0.09
+  const eff = clamp(strength + posBonus, 0, 1)
   const rand = Math.random()
 
+  // C-bet frequencies by position and street
+  const cbetFreq = position === 2 ? 0.78 : position === 1 ? 0.55 : 0.35
+
   if (canCheck) {
-    // C-bet: bet frequently when in position with any strength
-    if (position === 2 && effectiveStrength > 0.30 && rand < 0.75) {
-      const betSize = effectiveStrength > 0.65 ? randomBetween(0.75, 1.2) : randomBetween(0.4, 0.7)
-      return { type: 'raise', amount: clamp(Math.floor(potSize * betSize), minRaise, maxRaise) }
+    // Value bet strong hands
+    if (eff > 0.58) {
+      // Size up on later streets for value
+      const sizeMult = stage === 'river' ? randomBetween(0.7, 1.1)
+        : stage === 'turn' ? randomBetween(0.6, 0.9)
+        : randomBetween(0.5, 0.8)
+      return { type: 'raise', amount: clamp(Math.floor(potSize * sizeMult), minRaise, maxRaise) }
     }
-    // Semi-bluff
-    if (draw && rand < 0.45) {
-      return { type: 'raise', amount: clamp(Math.floor(potSize * 0.6), minRaise, maxRaise) }
+    // C-bet (semi-bluff / probe)
+    if (rand < cbetFreq && stage !== 'river') {
+      const isBluffBet = eff < 0.40
+      const sizeMult = randomBetween(0.45, 0.70)
+      return { type: 'raise', amount: clamp(Math.floor(potSize * sizeMult), minRaise, maxRaise), isBluff: isBluffBet }
+    }
+    // River bluff with polarized range (give up on missed draws unless strong)
+    if (stage === 'river' && eff < 0.30 && position === 2 && rand < 0.35) {
+      return { type: 'raise', amount: clamp(Math.floor(potSize * randomBetween(0.6, 1.0)), minRaise, maxRaise), isBluff: true }
     }
     return { type: 'check' }
   }
 
-  // Fold marginal hands with bad pot odds
-  if (effectiveStrength < 0.25 && potOdds > 0.20 && !draw) return { type: 'fold' }
-  if (effectiveStrength < 0.15) return { type: 'fold' }
+  // Draw semi-bluff call/raise
+  if (drawEq > potOdds + 0.06) {
+    if (drawEq > 0.28 && position === 2 && rand < 0.40) {
+      // Semi-bluff raise
+      return { type: 'raise', amount: clamp(Math.floor((potSize + callAmount) * 0.9), minRaise, maxRaise), isBluff: true }
+    }
+    if (callAmount < stackSize) return { type: 'call' }
+  }
+
+  // Fold weak hands without sufficient odds
+  if (eff < 0.22 && potOdds > 0.20 && drawEq < 0.15) return { type: 'fold' }
+  if (eff < 0.16) return { type: 'fold' }
+
+  // Low SPR polarization: commit or fold
+  if (spr < 2.0) {
+    if (eff > 0.50) return { type: 'allin' }
+    if (eff < 0.35) return { type: 'fold' }
+  }
 
   // 3-bet with strong hands
-  if (effectiveStrength > 0.80) {
-    if (rand < 0.70) {
-      return { type: 'raise', amount: clamp(Math.floor((potSize + callAmount * 2) * 1.0), minRaise, maxRaise) }
+  if (eff > 0.75) {
+    if (rand < 0.72) {
+      const amount = clamp(Math.floor((potSize + callAmount * 3) * 0.85), minRaise, maxRaise)
+      return { type: 'raise', amount }
     }
-    if (callAmount > stackSize * 0.7) return { type: 'allin' }
+    if (callAmount > stackSize * 0.65) return { type: 'allin' }
   }
 
-  // Semi-bluff re-raise
-  if (draw && position === 2 && rand < 0.30) {
-    return { type: 'raise', amount: clamp(Math.floor(potSize * 0.8), minRaise, maxRaise) }
+  // Light 3-bet bluff with best position
+  if (position === 2 && stage === 'preflop' && eff < 0.30 && rand < 0.18) {
+    return { type: 'raise', amount: clamp(Math.floor((potSize + callAmount * 3) * 0.75), minRaise, maxRaise), isBluff: true }
   }
 
-  if (callAmount > stackSize * 0.9) return { type: 'allin' }
-  if (callAmount > stackSize) return { type: 'allin' }
+  if (callAmount >= stackSize) return { type: 'allin' }
   return { type: 'call' }
 }
 
 // ─── LEGENDARY: The Jester ────────────────────────────────────
+// Near-GTO mixed strategies, balanced value/bluff ratios, polarized river play
 function legendaryAI(
-  strength: number, draw: boolean, potOdds: number, canCheck: boolean,
-  callAmount: number, minRaise: number, maxRaise: number, stackSize: number,
-  potSize: number, position: number, stage: string,
+  strength: number, drawEq: number, potOdds: number, spr: number,
+  canCheck: boolean, callAmount: number, minRaise: number, maxRaise: number,
+  stackSize: number, potSize: number, position: number, stage: string,
 ): AIAction {
   const rand = Math.random()
-  const positionBonus = position * 0.10
-  const effectiveStrength = clamp(strength + positionBonus, 0, 1)
+  const posBonus = position * 0.10
+  const eff = clamp(strength + posBonus, 0, 1)
 
-  // Mixed strategy frequencies based on GTO-ish thinking
-  const bluffFreq = stage === 'river' ? 0.25 : 0.35
-  const raiseForValue = effectiveStrength > 0.60
-  const polarizedBluff = effectiveStrength < 0.25 && rand < bluffFreq
+  // GTO bluff frequency varies by street (balanced ranges)
+  const bluffFreq = stage === 'river' ? 0.28 : stage === 'turn' ? 0.33 : 0.38
+
+  // Value threshold: adjust down to incentivize mixed strategies
+  const valueThresh = stage === 'river' ? 0.58 : 0.55
 
   if (canCheck) {
-    if (raiseForValue) {
-      // Size based on streets
-      const sizeMult = stage === 'river' ? randomBetween(0.6, 1.1)
-        : stage === 'turn' ? randomBetween(0.5, 0.9)
-        : randomBetween(0.3, 0.7)
+    if (eff > valueThresh) {
+      // Size up on river for max value; use smaller sizes on earlier streets to induce
+      const sizeMult = stage === 'river' ? randomBetween(0.65, 1.15)
+        : stage === 'turn' ? randomBetween(0.50, 0.85)
+        : randomBetween(0.30, 0.65)
       return { type: 'raise', amount: clamp(Math.floor(potSize * sizeMult), minRaise, maxRaise) }
     }
-    if (polarizedBluff) {
-      return { type: 'raise', amount: clamp(Math.floor(potSize * randomBetween(0.5, 1.0)), minRaise, maxRaise) }
+    // Polarized bluff with air (GTO balance)
+    if (eff < 0.28 && rand < bluffFreq) {
+      const sizeMult = stage === 'river' ? randomBetween(0.75, 1.10) : randomBetween(0.50, 0.85)
+      return { type: 'raise', amount: clamp(Math.floor(potSize * sizeMult), minRaise, maxRaise), isBluff: true }
     }
-    if (draw && rand < 0.55 && stage !== 'river') {
-      return { type: 'raise', amount: clamp(Math.floor(potSize * 0.5), minRaise, maxRaise) }
+    // Semi-bluff with draws (high equity)
+    if (drawEq > 0.18 && rand < 0.60 && stage !== 'river') {
+      const sizeMult = drawEq > 0.28 ? randomBetween(0.55, 0.90) : randomBetween(0.35, 0.65)
+      return { type: 'raise', amount: clamp(Math.floor(potSize * sizeMult), minRaise, maxRaise), isBluff: true }
     }
     return { type: 'check' }
   }
 
-  // Fold very weak hands facing a bet (not a bluff)
-  if (effectiveStrength < 0.18 && potOdds > 0.25) {
-    if (rand > bluffFreq) return { type: 'fold' }
+  // Call with draws when getting correct odds (include implied odds)
+  const impliedOdds = spr > 5 ? drawEq * 1.3 : drawEq
+  if (impliedOdds > potOdds + 0.02 && rand < 0.85) {
+    if (drawEq > 0.22 && rand < 0.35) {
+      // Semi-bluff raise instead of just calling
+      const amount = clamp(Math.floor((potSize + callAmount) * randomBetween(0.8, 1.1)), minRaise, maxRaise)
+      return { type: 'raise', amount, isBluff: true }
+    }
+    if (callAmount < stackSize) return { type: 'call' }
   }
-  if (effectiveStrength < 0.10) return { type: 'fold' }
 
-  // Value re-raise
-  if (effectiveStrength > 0.75) {
-    const sizeMult = stage === 'river' ? randomBetween(1.0, 1.5) : randomBetween(0.8, 1.2)
+  // Fold weak air when facing bets (balanced — not always fold)
+  if (eff < 0.16 && potOdds > 0.22) {
+    if (rand > bluffFreq) return { type: 'fold' }  // sometimes call anyway to stay balanced
+  }
+  if (eff < 0.10) return { type: 'fold' }
+
+  // Low SPR: commit or fold — no middle ground
+  if (spr < 1.8) {
+    if (eff > 0.48) return { type: 'allin' }
+    if (eff < 0.32 && drawEq < 0.20) return { type: 'fold' }
+  }
+
+  // Value 3-bet with top of range
+  if (eff > 0.78) {
+    const sizeMult = stage === 'river' ? randomBetween(1.0, 1.6) : randomBetween(0.85, 1.25)
     const amount = clamp(Math.floor((callAmount + potSize) * sizeMult), minRaise, maxRaise)
-    if (rand < 0.65) return { type: 'raise', amount }
-    if (callAmount > stackSize * 0.8) return { type: 'allin' }
+    if (rand < 0.68) return { type: 'raise', amount }
+    if (callAmount > stackSize * 0.75) return { type: 'allin' }
   }
 
-  // Bluff-raise
-  if (polarizedBluff && stage !== 'river') {
-    return { type: 'raise', amount: clamp(Math.floor(potSize * 0.75), minRaise, maxRaise) }
+  // Bluff-raise with bottom of range (polarized 3-bet)
+  if (eff < 0.26 && rand < bluffFreq * 0.6 && stage !== 'river') {
+    const amount = clamp(Math.floor((potSize + callAmount * 3) * 0.75), minRaise, maxRaise)
+    return { type: 'raise', amount, isBluff: true }
   }
 
-  if (callAmount > stackSize) return { type: 'allin' }
+  if (callAmount >= stackSize) return { type: 'allin' }
   return { type: 'call' }
 }
