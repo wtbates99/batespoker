@@ -2,8 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { GameState, Player, getValidActions } from '@/lib/poker/engine'
+import { getHandStrength } from '@/lib/poker/ai'
 import Card, { CardSlot } from './Card'
 import BettingControls from './BettingControls'
+
+const TURN_TIMEOUT_SECONDS = 45  // seconds before auto-fold warning
 
 interface PokerTableProps {
   gameState: GameState
@@ -49,7 +52,9 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
     characterId: string; text: string; name: string
   } | null>(null)
   const [winnerVisible, setWinnerVisible] = useState(false)
+  const [turnSecondsLeft, setTurnSecondsLeft] = useState<number | null>(null)
   const dialogueTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const turnTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     if (dialogue) {
@@ -68,14 +73,42 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
     }
   }, [gameState.stage, gameState.winners])
 
-  const currentPlayer = gameState.players.find(p => p.id === currentPlayerId)
-  const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.id === currentPlayerId &&
+  // Turn timer: counts down when it's the human player's turn
+  const isMyTurnNow = gameState.players[gameState.currentPlayerIndex]?.id === currentPlayerId &&
     gameState.stage !== 'showdown' && gameState.stage !== 'ended' && gameState.stage !== 'waiting'
+
+  useEffect(() => {
+    if (turnTimerRef.current) clearInterval(turnTimerRef.current)
+
+    if (isMyTurnNow) {
+      setTurnSecondsLeft(TURN_TIMEOUT_SECONDS)
+      turnTimerRef.current = setInterval(() => {
+        setTurnSecondsLeft(prev => {
+          if (prev === null || prev <= 1) {
+            clearInterval(turnTimerRef.current!)
+            return null
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } else {
+      setTurnSecondsLeft(null)
+    }
+
+    return () => { if (turnTimerRef.current) clearInterval(turnTimerRef.current) }
+  }, [isMyTurnNow, gameState.currentPlayerIndex, gameState.round])
+
+  const currentPlayer = gameState.players.find(p => p.id === currentPlayerId)
+  const isMyTurn = isMyTurnNow
   const validActions = currentPlayer ? getValidActions(gameState, currentPlayerId) : null
   const totalPot = gameState.pot + gameState.players.reduce((s, p) => s + (p.currentBet || 0), 0)
 
   const numPlayers = gameState.players.length
   const seats = SEAT_POSITIONS.slice(0, Math.max(numPlayers, 2))
+
+  // Turn timer urgency thresholds
+  const timerUrgent = turnSecondsLeft !== null && turnSecondsLeft <= 10
+  const timerCritical = turnSecondsLeft !== null && turnSecondsLeft <= 5
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 860, margin: '0 auto' }}>
@@ -85,10 +118,11 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '6px 14px',
         background: 'rgba(12,14,9,0.9)',
-        border: '1px solid var(--border)',
+        border: `1px solid ${timerCritical ? 'rgba(220,80,80,0.5)' : timerUrgent ? 'rgba(220,160,50,0.4)' : 'var(--border)'}`,
         borderRadius: 5,
         fontSize: '0.68rem',
         letterSpacing: '0.08em',
+        transition: 'border-color 0.3s ease',
       }}>
         <span style={{ color: 'var(--text-muted)' }}>
           ROUND <span style={{ color: 'var(--text-dim)' }}>{gameState.round}</span>
@@ -96,10 +130,20 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
         <span style={{ color: 'var(--gold)', fontWeight: 700, fontSize: '0.82rem' }}>
           ♠ {totalPot}
         </span>
-        <span style={{ color: 'var(--text-muted)' }}>
+        <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
           {gameState.stage.toUpperCase()}
           {gameState.currentBet > 0 && (
-            <span style={{ color: 'var(--text-dim)', marginLeft: 8 }}>· bet {gameState.currentBet}</span>
+            <span style={{ color: 'var(--text-dim)' }}>· bet {gameState.currentBet}</span>
+          )}
+          {turnSecondsLeft !== null && (
+            <span style={{
+              color: timerCritical ? '#e05555' : timerUrgent ? '#e0a030' : 'var(--text-dim)',
+              fontWeight: timerUrgent ? 700 : 400,
+              animation: timerCritical ? 'blink 0.5s step-end infinite' : 'none',
+              minWidth: 28,
+            }}>
+              {turnSecondsLeft}s
+            </span>
           )}
         </span>
       </div>
@@ -231,22 +275,26 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
                 )}
                 {isTurn && player.isAI && (
                   <div style={{
-                    position: 'absolute', top: -4, right: -4,
+                    position: 'absolute', top: -5, right: -5,
                     background: 'rgba(201,168,76,0.95)',
-                    borderRadius: 8, padding: '1px 5px',
-                    fontSize: '0.4rem', fontWeight: 700, color: '#020302',
-                    letterSpacing: '0.05em', animation: 'blink 0.8s step-end infinite',
+                    borderRadius: 8, padding: '2px 5px',
+                    fontSize: '0.56rem', fontWeight: 700, color: '#020302',
+                    letterSpacing: '0.04em', animation: 'blink 0.8s step-end infinite',
+                    whiteSpace: 'nowrap',
                   }}>THINKING</div>
                 )}
               </div>
 
               {/* Name */}
-              <div style={{
-                fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.08em',
-                textTransform: 'uppercase', color: isMe ? 'var(--gold)' : 'var(--text-dim)',
-                whiteSpace: 'nowrap', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis',
-                textAlign: 'center',
-              }}>
+              <div
+                title={player.name}
+                style={{
+                  fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.08em',
+                  textTransform: 'uppercase', color: isMe ? 'var(--gold)' : 'var(--text-dim)',
+                  whiteSpace: 'nowrap', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis',
+                  textAlign: 'center',
+                }}
+              >
                 {player.name}
                 {player.isSmallBlind && <span style={{ color: 'var(--text-muted)', fontSize: '0.5rem' }}> SB</span>}
                 {player.isBigBlind && <span style={{ color: 'var(--text-muted)', fontSize: '0.5rem' }}> BB</span>}
@@ -277,6 +325,28 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
               )}
               {player.status === 'allin' && (
                 <div className="seat-status-badge badge-allin">ALL IN</div>
+              )}
+              {/* Last action indicator */}
+              {gameState.lastActionPlayerId === player.id && gameState.lastActionType && player.status !== 'folded' && (
+                <div style={{
+                  fontSize: '0.6rem',
+                  letterSpacing: '0.05em',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  color: gameState.lastActionType === 'raise' ? '#e0c060'
+                    : gameState.lastActionType === 'allin' ? '#f07070'
+                    : gameState.lastActionType === 'call' ? '#70c0e0'
+                    : gameState.lastActionType === 'check' ? 'var(--text-dim)'
+                    : 'var(--text-muted)',
+                  background: 'rgba(0,0,0,0.75)',
+                  padding: '2px 6px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255,255,255,0.08)',
+                }}>
+                  {gameState.lastActionType === 'raise' && gameState.lastActionAmount
+                    ? `+${gameState.lastActionAmount}`
+                    : gameState.lastActionType}
+                </div>
               )}
 
               {/* Hole cards */}
@@ -336,30 +406,58 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
       )}
 
       {/* YOUR HOLE CARDS */}
-      {currentPlayer && currentPlayer.holeCards.length > 0 && gameState.stage !== 'waiting' && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 16,
-          padding: '12px 20px',
-          background: 'rgba(8,12,6,0.95)',
-          border: `1px solid ${isMyTurn ? 'rgba(201,168,76,0.4)' : 'var(--border)'}`,
-          borderRadius: 8,
-          boxShadow: isMyTurn ? '0 0 20px rgba(201,168,76,0.1)' : 'none',
-          transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
-        }}>
-          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', minWidth: 72 }}>
-            Your Hand
+      {currentPlayer && currentPlayer.holeCards.length > 0 && gameState.stage !== 'waiting' && (() => {
+        const strength = getHandStrength(currentPlayer.holeCards, gameState.communityCards)
+        const strengthPct = Math.round(strength * 100)
+        const strengthColor = strength > 0.75 ? '#7de87d' : strength > 0.55 ? '#c9a84c' : strength > 0.35 ? '#c9843a' : '#e07070'
+        const strengthLabel = strength > 0.87 ? 'Monster' : strength > 0.72 ? 'Strong' : strength > 0.55 ? 'Good' : strength > 0.38 ? 'Marginal' : strength > 0.22 ? 'Weak' : 'Trash'
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 16,
+            padding: '12px 20px',
+            background: 'rgba(8,12,6,0.95)',
+            border: `1px solid ${isMyTurn ? 'rgba(201,168,76,0.4)' : 'var(--border)'}`,
+            borderRadius: 8,
+            boxShadow: isMyTurn ? '0 0 20px rgba(201,168,76,0.1)' : 'none',
+            transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+          }}>
+            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', minWidth: 72 }}>
+              Your Hand
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {currentPlayer.holeCards.map((card, i) => (
+                <Card key={i} card={card} size="lg" />
+              ))}
+            </div>
+            {/* Hand strength indicator */}
+            <div style={{ flex: 1, padding: '0 8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>STRENGTH</span>
+                <span style={{ fontSize: '0.6rem', color: strengthColor, fontWeight: 700 }}>{strengthLabel}</span>
+              </div>
+              <div style={{
+                height: 3, borderRadius: 2,
+                background: 'rgba(255,255,255,0.06)',
+                overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${strengthPct}%`,
+                  background: `linear-gradient(to right, #e07070, #c9843a, #c9a84c, #7de87d)`,
+                  backgroundSize: '300px 100%',
+                  backgroundPosition: `${(1 - strength) * -200}px 0`,
+                  borderRadius: 2,
+                  transition: 'width 0.4s ease',
+                }} />
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 2 }}>stack</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 700 }}>{currentPlayer.chips}</div>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            {currentPlayer.holeCards.map((card, i) => (
-              <Card key={i} card={card} size="lg" />
-            ))}
-          </div>
-          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 2 }}>stack</div>
-            <div style={{ fontSize: '0.82rem', color: 'var(--gold)', fontWeight: 700 }}>{currentPlayer.chips}</div>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* BETTING CONTROLS */}
       {validActions && gameState.stage !== 'showdown' && gameState.stage !== 'ended' && gameState.stage !== 'waiting' && (

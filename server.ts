@@ -6,9 +6,9 @@ import {
   GameState, Player,
   createGame, startRound, processAction, processAIAction,
   getValidActions, prepareNextRound, isPlayerTurn,
-  CreateGameConfig,
+  CreateGameConfig, PlayerTendencies,
 } from './lib/poker/engine'
-import { AIDifficulty } from './lib/poker/ai'
+import { AIDifficulty, getAIDialogue } from './lib/poker/ai'
 
 const dev  = process.env.NODE_ENV !== 'production'
 const port = parseInt(process.env.PORT ?? '3000', 10)
@@ -17,6 +17,12 @@ const handle = app.getRequestHandler()
 
 // ─── Room Management ─────────────────────────────────────────
 
+interface PlayerStats {
+  actions: number
+  raises: number
+  folds: number
+}
+
 interface Room {
   id: string
   hostSocketId: string
@@ -24,10 +30,23 @@ interface Room {
   gameState: GameState | null
   started: boolean
   maxPlayers: number
+  // Tracks human player tendencies for AI adaptation
+  humanStats: Map<string, PlayerStats>
 }
 
 const rooms = new Map<string, Room>()
 const socketToRoom = new Map<string, string>()
+// Session tokens for reconnect: token → { roomId, playerId }
+const sessionTokens = new Map<string, { roomId: string; playerId: string; name: string }>()
+// Disconnect timers: playerId → timeout handle (gives 45s grace before folding)
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function generateToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let t = ''
+  for (let i = 0; i < 32; i++) t += chars[Math.floor(Math.random() * chars.length)]
+  return t
+}
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -67,13 +86,35 @@ async function processAITurns(
   const currentPlayer = state.players[state.currentPlayerIndex]
   if (!currentPlayer || !currentPlayer.isAI) return
 
-  // Realistic thinking delay
-  const delay = 1000 + Math.random() * 1500
-  await new Promise(r => setTimeout(r, delay))
+  // Character-specific think time: Lucky is impulsive, Baron is deliberate, Jester is erratic
+  let thinkMs: number
+  switch (currentPlayer.difficulty) {
+    case 'easy':      thinkMs = 400 + Math.random() * 700;  break  // Lucky: fast, impulsive
+    case 'medium':    thinkMs = 700 + Math.random() * 1000; break  // Duchess: measured
+    case 'hard':      thinkMs = 900 + Math.random() * 1400; break  // Baron: deliberate
+    case 'legendary': thinkMs = 300 + Math.random() * 2000; break  // Jester: unpredictable
+    default:          thinkMs = 700 + Math.random() * 1000
+  }
+  await new Promise(r => setTimeout(r, thinkMs))
 
   if (!room.gameState) return
 
-  const { state: newState, action, dialogue } = processAIAction(room.gameState)
+  // Build aggregate human tendencies across all tracked players
+  let tendencies: PlayerTendencies | undefined
+  if (room.humanStats.size > 0) {
+    let totalActions = 0, totalRaises = 0, totalFolds = 0
+    for (const s of room.humanStats.values()) {
+      totalActions += s.actions; totalRaises += s.raises; totalFolds += s.folds
+    }
+    if (totalActions >= 5) {
+      tendencies = {
+        raiseFreq: totalRaises / totalActions,
+        foldFreq: totalFolds / totalActions,
+      }
+    }
+  }
+
+  const { state: newState, action, dialogue } = processAIAction(room.gameState, tendencies)
   room.gameState = newState
 
   // Broadcast dialogue
@@ -91,8 +132,9 @@ async function processAITurns(
     io.to(playerData.socketId).emit('game_state', safeState)
   }
 
-  // If showdown, schedule next round
+  // If showdown, emit win/lose dialogue then schedule next round
   if (newState.stage === 'showdown') {
+    emitShowdownDialogue(io, room, newState)
     setTimeout(async () => {
       if (!room.gameState) return
       const next = prepareNextRound(room.gameState)
@@ -112,6 +154,34 @@ async function processAITurns(
 
   // Continue AI turns
   await processAITurns(io, room, depth + 1)
+}
+
+// ─── Showdown Dialogue ────────────────────────────────────────
+
+function emitShowdownDialogue(io: Server, room: Room, state: GameState) {
+  if (!state.winners || state.winners.length === 0) return
+  const winnerIds = new Set(state.winners.map(w => w.playerId))
+
+  // Pick one AI character at random to react (avoid dialogue spam from all players)
+  const aiPlayers = state.players.filter(p => p.isAI && p.characterId)
+  if (aiPlayers.length === 0) return
+
+  const reactor = aiPlayers[Math.floor(Math.random() * aiPlayers.length)]
+  if (!reactor.characterId) return
+
+  const won = winnerIds.has(reactor.id)
+  const situation = won ? 'win' : 'lose'
+  const text = getAIDialogue(reactor.characterId, situation)
+  if (text) {
+    // Small delay so dialogue shows after showdown renders
+    setTimeout(() => {
+      io.to(room.id).emit('dialogue', {
+        characterId: reactor.characterId,
+        playerName: reactor.name,
+        text,
+      })
+    }, 600)
+  }
 }
 
 // ─── Socket.IO Handlers ───────────────────────────────────────
@@ -155,12 +225,15 @@ function setupSocket(io: Server) {
         gameState,
         started: true,
         maxPlayers: 1,
+        humanStats: new Map([[humanId, { actions: 0, raises: 0, folds: 0 }]]),
       }
       rooms.set(roomId, room)
       socketToRoom.set(socket.id, roomId)
 
       socket.join(roomId)
-      socket.emit('solo_started', { roomId, playerId: humanId })
+      const soloToken = generateToken()
+      sessionTokens.set(soloToken, { roomId, playerId: humanId, name: data.playerName })
+      socket.emit('solo_started', { roomId, playerId: humanId, sessionToken: soloToken })
       socket.emit('game_state', getRoomSafeState(room, humanId))
 
       // Start AI turns if AI goes first
@@ -181,15 +254,19 @@ function setupSocket(io: Server) {
         gameState: null,
         started: false,
         maxPlayers: 6,
+        humanStats: new Map(),
       }
       rooms.set(roomId, room)
       socketToRoom.set(socket.id, roomId)
 
       socket.join(roomId)
+      const createToken = generateToken()
+      sessionTokens.set(createToken, { roomId, playerId, name: data.playerName })
       socket.emit('room_joined', {
         roomId,
         playerId,
         isHost: true,
+        sessionToken: createToken,
         players: Array.from(room.players.entries()).map(([id, p]) => ({ id, name: p.name })),
       })
     })
@@ -215,9 +292,12 @@ function setupSocket(io: Server) {
       socketToRoom.set(socket.id, data.roomId.toUpperCase())
       socket.join(data.roomId.toUpperCase())
 
+      room.humanStats.set(playerId, { actions: 0, raises: 0, folds: 0 })
       const playerList = Array.from(room.players.entries()).map(([id, p]) => ({ id, name: p.name }))
       io.to(data.roomId.toUpperCase()).emit('players_updated', playerList)
-      socket.emit('room_joined', { roomId: data.roomId.toUpperCase(), playerId, isHost: false, players: playerList })
+      const joinToken = generateToken()
+      sessionTokens.set(joinToken, { roomId: data.roomId.toUpperCase(), playerId, name: data.playerName })
+      socket.emit('room_joined', { roomId: data.roomId.toUpperCase(), playerId, isHost: false, sessionToken: joinToken, players: playerList })
     })
 
     // ── Start multiplayer game ──────────────────────────────
@@ -279,11 +359,22 @@ function setupSocket(io: Server) {
 
       room.gameState = processAction(room.gameState, data.playerId, data.action)
 
+      // Track human player tendencies for AI adaptation
+      const playerIsHuman = !room.gameState.players.find(p => p.id === data.playerId)?.isAI
+      if (playerIsHuman) {
+        const stats = room.humanStats.get(data.playerId) ?? { actions: 0, raises: 0, folds: 0 }
+        stats.actions++
+        if (data.action.type === 'raise' || data.action.type === 'allin') stats.raises++
+        if (data.action.type === 'fold') stats.folds++
+        room.humanStats.set(data.playerId, stats)
+      }
+
       for (const [playerId, playerData] of room.players.entries()) {
         io.to(playerData.socketId).emit('game_state', getRoomSafeState(room, playerId))
       }
 
       if (room.gameState.stage === 'showdown') {
+        emitShowdownDialogue(io, room, room.gameState)
         setTimeout(async () => {
           if (!room.gameState) return
           const next = prepareNextRound(room.gameState)
@@ -309,6 +400,66 @@ function setupSocket(io: Server) {
       }
     })
 
+    // ── Reconnect via session token ─────────────────────────
+    socket.on('reconnect_session', (data: { sessionToken: string }) => {
+      const session = sessionTokens.get(data.sessionToken)
+      if (!session) {
+        socket.emit('error', { message: 'Session expired. Please start a new game.' })
+        return
+      }
+
+      const room = rooms.get(session.roomId)
+      if (!room) {
+        sessionTokens.delete(data.sessionToken)
+        socket.emit('error', { message: 'Game is no longer active.' })
+        return
+      }
+
+      const { playerId } = session
+
+      // Cancel any pending disconnect timer
+      const timer = disconnectTimers.get(playerId)
+      if (timer) {
+        clearTimeout(timer)
+        disconnectTimers.delete(playerId)
+      }
+
+      // Update socket ID in room
+      const existing = room.players.get(playerId)
+      const wasHost = room.hostSocketId === (existing?.socketId ?? '')
+      if (existing) {
+        existing.socketId = socket.id
+      } else {
+        room.players.set(playerId, { socketId: socket.id, name: session.name })
+      }
+      // Update host socket if this player was the host
+      if (wasHost) room.hostSocketId = socket.id
+      socketToRoom.set(socket.id, session.roomId)
+      socket.join(session.roomId)
+
+      // Resume the game if it's in progress
+      if (room.gameState) {
+        // Restore the player's status if they were folded due to timeout
+        const gPlayer = room.gameState.players.find(p => p.id === playerId)
+        if (gPlayer && gPlayer.status === 'folded') {
+          // Can't un-fold mid-hand — they'll be back next round
+        }
+        socket.emit('reconnected', { playerId, roomId: session.roomId, sessionToken: data.sessionToken })
+        socket.emit('game_state', getRoomSafeState(room, playerId))
+        if (room.started) socket.emit('game_started', { playerId })
+      } else {
+        const playerList = Array.from(room.players.entries()).map(([id, p]) => ({ id, name: p.name }))
+        socket.emit('reconnected', { playerId, roomId: session.roomId, sessionToken: data.sessionToken })
+        socket.emit('room_joined', {
+          roomId: session.roomId,
+          playerId,
+          isHost: room.hostSocketId === socket.id,
+          sessionToken: data.sessionToken,
+          players: playerList,
+        })
+      }
+    })
+
     // ── Get room info ───────────────────────────────────────
     socket.on('get_rooms', () => {
       const publicRooms = Array.from(rooms.values())
@@ -330,35 +481,64 @@ function setupSocket(io: Server) {
       const room = rooms.get(roomId)
       if (!room) return
 
-      // Remove disconnected player
+      // Find the disconnected player
+      let disconnectedPlayerId: string | null = null
       for (const [playerId, playerData] of room.players.entries()) {
         if (playerData.socketId === socket.id) {
-          room.players.delete(playerId)
-          // Mark as folded in active game
-          if (room.gameState) {
-            const player = room.gameState.players.find(p => p.id === playerId)
-            if (player && player.status === 'active') {
-              room.gameState = processAction(room.gameState, playerId, { type: 'fold' })
-            }
-          }
+          disconnectedPlayerId = playerId
           break
         }
       }
 
-      if (room.players.size === 0) {
-        rooms.delete(roomId)
-        return
-      }
+      if (!disconnectedPlayerId) return
 
-      // Reassign host if needed
-      if (room.hostSocketId === socket.id) {
-        const firstPlayer = Array.from(room.players.values())[0]
-        if (firstPlayer) room.hostSocketId = firstPlayer.socketId
-      }
+      // Give a 45-second grace period to reconnect before folding/removing
+      const graceTimer = setTimeout(() => {
+        disconnectTimers.delete(disconnectedPlayerId!)
+        const currentRoom = rooms.get(roomId)
+        if (!currentRoom) return
 
-      io.to(roomId).emit('player_left', {
-        players: Array.from(room.players.entries()).map(([id, p]) => ({ id, name: p.name })),
-      })
+        // Check if player has already reconnected (socket would differ)
+        const playerData = currentRoom.players.get(disconnectedPlayerId!)
+        if (playerData && playerData.socketId !== socket.id) return  // reconnected
+
+        // Remove player and fold their hand
+        currentRoom.players.delete(disconnectedPlayerId!)
+
+        if (currentRoom.gameState) {
+          const player = currentRoom.gameState.players.find(p => p.id === disconnectedPlayerId)
+          if (player && player.status === 'active') {
+            currentRoom.gameState = processAction(currentRoom.gameState, disconnectedPlayerId!, { type: 'fold' })
+            // Broadcast updated state
+            for (const [pId, pd] of currentRoom.players.entries()) {
+              io.to(pd.socketId).emit('game_state', getRoomSafeState(currentRoom, pId))
+            }
+            // Continue AI turns if needed
+            const nextPlayer = currentRoom.gameState.players[currentRoom.gameState.currentPlayerIndex]
+            if (nextPlayer?.isAI) processAITurns(io, currentRoom)
+          }
+        }
+
+        if (currentRoom.players.size === 0) {
+          rooms.delete(roomId)
+          return
+        }
+
+        // Reassign host if needed
+        if (currentRoom.hostSocketId === socket.id) {
+          const firstPlayer = Array.from(currentRoom.players.values())[0]
+          if (firstPlayer) currentRoom.hostSocketId = firstPlayer.socketId
+        }
+
+        io.to(roomId).emit('player_left', {
+          players: Array.from(currentRoom.players.entries()).map(([id, p]) => ({ id, name: p.name })),
+        })
+      }, 45000)  // 45 second grace period
+
+      disconnectTimers.set(disconnectedPlayerId, graceTimer)
+
+      // Notify others that this player might be disconnected
+      io.to(roomId).emit('player_disconnected', { playerId: disconnectedPlayerId })
     })
   })
 }

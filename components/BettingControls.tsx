@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ValidActions } from '@/lib/poker/engine'
 
 interface BettingControlsProps {
@@ -17,10 +17,50 @@ export default function BettingControls({
   const [showRaise, setShowRaise] = useState(false)
   const [raiseAmount, setRaiseAmount] = useState(validActions.minRaise)
 
+  // Sync raise amount when valid actions change (new round/street)
+  useEffect(() => {
+    setRaiseAmount(validActions.minRaise)
+    setShowRaise(false)
+  }, [validActions.minRaise, validActions.maxRaise])
+
+  // Keyboard shortcuts: F=fold, Space/C=check/call, R=toggle raise
+  useEffect(() => {
+    if (disabled) return
+    function handleKey(e: KeyboardEvent) {
+      // Ignore when typing in inputs
+      if ((e.target as HTMLElement).tagName === 'INPUT') return
+      switch (e.key.toLowerCase()) {
+        case 'f':
+          if (validActions.canFold) { e.preventDefault(); onAction('fold') }
+          break
+        case 'c':
+          e.preventDefault()
+          if (validActions.canCheck) onAction('check')
+          else if (validActions.canCall) onAction('call')
+          break
+        case ' ':
+          e.preventDefault()
+          if (validActions.canCheck) onAction('check')
+          else if (validActions.canCall) onAction('call')
+          break
+        case 'r':
+          e.preventDefault()
+          if (validActions.canRaise) { setRaiseAmount(validActions.minRaise); setShowRaise(s => !s) }
+          break
+        case 'a':
+          if (validActions.canAllIn) { e.preventDefault(); onAction('allin') }
+          break
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [disabled, validActions, onAction])
+
   const presets = [
+    { label: '⅓ pot', value: Math.max(validActions.minRaise, Math.floor(potSize * 0.33)) },
     { label: '½ pot', value: Math.max(validActions.minRaise, Math.floor(potSize * 0.5)) },
-    { label: 'pot',   value: Math.max(validActions.minRaise, potSize) },
-    { label: '2× pot', value: Math.max(validActions.minRaise, potSize * 2) },
+    { label: '¾ pot', value: Math.max(validActions.minRaise, Math.floor(potSize * 0.75)) },
+    { label: 'Pot',   value: Math.max(validActions.minRaise, potSize) },
     { label: 'All In', value: validActions.maxRaise },
   ].filter(p => p.value <= validActions.maxRaise)
 
@@ -53,16 +93,18 @@ export default function BettingControls({
           className="btn-action btn-fold"
           onClick={() => onAction('fold')}
           disabled={!validActions.canFold}
+          title="Fold [F]"
         >
-          Fold
+          Fold <span className="kbd-hint">[F]</span>
         </button>
 
         {validActions.canCheck && (
           <button
             className="btn-action btn-check"
             onClick={() => onAction('check')}
+            title="Check [C or Space]"
           >
-            Check
+            Check <span className="kbd-hint">[C]</span>
           </button>
         )}
 
@@ -70,8 +112,9 @@ export default function BettingControls({
           <button
             className="btn-action btn-call"
             onClick={() => onAction('call')}
+            title="Call [C or Space]"
           >
-            Call {validActions.callAmount}
+            Call {validActions.callAmount} <span className="kbd-hint">[C]</span>
           </button>
         )}
 
@@ -79,8 +122,9 @@ export default function BettingControls({
           <button
             className="btn-action btn-raise"
             onClick={() => { setRaiseAmount(validActions.minRaise); setShowRaise(!showRaise) }}
+            title="Raise [R]"
           >
-            Raise ›
+            Raise › <span className="kbd-hint">[R]</span>
           </button>
         )}
 
@@ -88,6 +132,7 @@ export default function BettingControls({
           className="btn-action btn-allin"
           onClick={() => onAction('allin')}
           disabled={!validActions.canAllIn}
+          title="All In [A]"
         >
           All In {playerChips}
         </button>

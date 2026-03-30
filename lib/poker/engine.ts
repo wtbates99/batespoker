@@ -571,7 +571,15 @@ function calculatePots(players: Player[]): SidePot[] {
 // AI TURN PROCESSOR
 // ─────────────────────────────────────────────────────────────
 
-export function processAIAction(state: GameState): { state: GameState; action: AIAction; dialogue?: string } {
+export interface PlayerTendencies {
+  raiseFreq: number  // 0-1: proportion of actions that were raises
+  foldFreq: number   // 0-1: proportion of actions that were folds
+}
+
+export function processAIAction(
+  state: GameState,
+  opponentTendencies?: PlayerTendencies,
+): { state: GameState; action: AIAction; dialogue?: string } {
   const player = state.players[state.currentPlayerIndex]
   if (!player || !player.isAI) return { state, action: { type: 'check' } }
 
@@ -583,10 +591,13 @@ export function processAIAction(state: GameState): { state: GameState; action: A
   const myPos = activeIndices.indexOf(state.currentPlayerIndex)
   const position = myPos >= activeIndices.length - 2 ? 2 : myPos <= 1 ? 0 : 1
 
+  // Total pot includes bets that are already "in" on the current street
+  const totalPot = state.pot + state.players.reduce((sum, p) => sum + (p.currentBet || 0), 0)
+
   const ctx: AIContext = {
     holeCards: player.holeCards,
     communityCards: state.communityCards,
-    potSize: state.pot,
+    potSize: totalPot,
     callAmount: validActions.callAmount,
     minRaise: validActions.minRaise,
     maxRaise: validActions.maxRaise,
@@ -596,18 +607,24 @@ export function processAIAction(state: GameState): { state: GameState; action: A
     difficulty: player.difficulty ?? 'medium',
     characterId: player.characterId ?? 'baron_von_chips',
     activePlayers: activePlayers.length,
+    bigBlind: state.bigBlind,
+    opponentRaiseFreq: opponentTendencies?.raiseFreq,
+    opponentFoldFreq: opponentTendencies?.foldFreq,
   }
 
   const action = getAIAction(ctx)
 
-  // Get situational dialogue
+  // Get situational dialogue — uses full range of situations
   let dialogueSituation = 'general'
   if (action.type === 'fold') dialogueSituation = 'fold'
+  else if (action.type === 'allin') dialogueSituation = 'allin'
   else if (action.isBluff) dialogueSituation = 'bluff'
-  else if (action.type === 'raise' && action.amount && action.amount > state.pot * 0.8) dialogueSituation = 'bigRaise'
-  else if (Math.random() < 0.2) dialogueSituation = 'general'
+  else if (action.type === 'raise' && action.amount && action.amount > state.pot * 0.75) dialogueSituation = 'bigRaise'
+  else if (action.type === 'check' && Math.random() < 0.4) dialogueSituation = 'check'
+  else if (action.type === 'call' && Math.random() < 0.4) dialogueSituation = 'call'
 
-  const dialogue = Math.random() < 0.35 ? getAIDialogue(player.characterId ?? '', dialogueSituation) : undefined
+  // 20% base chance of dialogue; slightly lower to avoid spam with multiple AI players
+  const dialogue = Math.random() < 0.22 ? getAIDialogue(player.characterId ?? '', dialogueSituation) : undefined
 
   const newState = processAction(state, player.id, action)
   return { state: newState, action, dialogue }

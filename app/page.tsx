@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 // ─── CHARACTERS ──────────────────────────────────────────────
@@ -56,37 +55,12 @@ const CHARACTERS = [
   },
 ]
 
-// ─── BOOT LINES ──────────────────────────────────────────────
-const BOOT_LINES = [
-  { t: 0,    s: 'BATESPOKER v1.0.0',                              cls: 'boot-bright' },
-  { t: 80,   s: '' },
-  { t: 140,  s: '[  0.000 ] Vault: sealed ...........................',               },
-  { t: 230,  s: '[  0.021 ] Felt: green ........................ <ok>[  OK  ]</ok>' },
-  { t: 320,  s: '[  0.056 ] Deck: 52 cards shuffled ........... <ok>[  OK  ]</ok>' },
-  { t: 420,  s: '[  0.112 ] Chips: stacked ...................... <ok>[  OK  ]</ok>' },
-  { t: 530,  s: '[  0.201 ] Baron Von Chips: seated ............ <ok>[  OK  ]</ok>' },
-  { t: 630,  s: '[  0.244 ] Lucky McGee: seated ................. <ok>[  OK  ]</ok>' },
-  { t: 730,  s: '[  0.278 ] The Duchess: seated ................. <ok>[  OK  ]</ok>' },
-  { t: 830,  s: '[  0.311 ] The Jester: seated .................. <ok>[  OK  ]</ok>' },
-  { t: 950,  s: '' },
-  { t: 1700, s: '' },
-  { t: 1760, s: '[  1.024 ] RUNE_006  BATESPOKER .............. <ok>[  OK  ]</ok>' },
-  { t: 1840, s: '' },
-  { t: 1880, s: '[  1.200 ] Ante up.', cls: 'boot-dim' },
-  { t: 2050, s: '> ♠ THE VAULT IS OPEN ♠', cls: 'boot-granted' },
-]
-
 export default function HomePage() {
-  const router = useRouter()
-  const [booted, setBooted] = useState(false)
-  const [showBoot, setShowBoot] = useState(true)
   const [user, setUser] = useState<{ username: string } | null>(null)
   const [showAuth, setShowAuth] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
   const [authForm, setAuthForm] = useState({ username: '', password: '' })
   const [authError, setAuthError] = useState('')
-  const bootRef = useRef<HTMLPreElement>(null)
-  const barRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Check auth
@@ -96,56 +70,8 @@ export default function HomePage() {
     }).catch(() => {})
   }, [])
 
-  // Boot sequence
-  useEffect(() => {
-    const alreadyBooted = sessionStorage.getItem('vault_booted')
-    if (alreadyBooted) {
-      setBooted(true)
-      setShowBoot(false)
-      return
-    }
-    sessionStorage.setItem('vault_booted', '1')
-
-    const pre = bootRef.current
-    if (!pre) return
-
-    function appendLine(raw: string, cls?: string) {
-      const html = raw.replace(/<ok>(.*?)<\/ok>/g, '<span class="boot-ok">$1</span>')
-      const s = document.createElement('span')
-      if (cls) s.className = cls
-      s.innerHTML = html + '\n'
-      pre!.appendChild(s)
-      pre!.scrollTop = pre!.scrollHeight
-    }
-
-    BOOT_LINES.forEach(({ t, s, cls }) => {
-      setTimeout(() => appendLine(s, cls), t)
-    })
-
-    // Progress bar
-    setTimeout(() => {
-      let pct = 0
-      const iv = setInterval(() => {
-        pct = Math.min(pct + 1.2, 100)
-        if (barRef.current) barRef.current.style.width = pct + '%'
-        if (pct >= 100) clearInterval(iv)
-      }, 10)
-    }, 950)
-
-    // Fade out
-    const bootEl = document.getElementById('boot-screen')
-    setTimeout(() => {
-      if (bootEl) bootEl.classList.add('fade-out')
-      setTimeout(() => {
-        setShowBoot(false)
-        setBooted(true)
-      }, 700)
-    }, 2700)
-  }, [])
-
   // Canvas floating cards
   useEffect(() => {
-    if (!booted) return
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')!
@@ -200,7 +126,7 @@ export default function HomePage() {
     }
     draw()
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize) }
-  }, [booted])
+  }, [])
 
   // Auth handlers
   async function handleAuth(e: React.FormEvent) {
@@ -226,19 +152,8 @@ export default function HomePage() {
 
   return (
     <>
-      {/* BOOT SCREEN */}
-      {showBoot && <div className="boot" id="boot-screen">
-        <div className="boot-inner">
-          <div className="boot-rune">♠ BATESPOKER ♠</div>
-          <pre className="boot-lines" ref={bootRef} />
-          <div className="boot-bar-wrap">
-            <div className="boot-bar" ref={barRef} />
-          </div>
-        </div>
-      </div>}
-
       {/* MAIN CONTENT */}
-      <div style={{ opacity: booted ? 1 : 0, transition: 'opacity 0.5s ease 0.2s' }}>
+      <div>
 
         {/* NAV */}
         <nav className="vault-nav" id="vault-nav">

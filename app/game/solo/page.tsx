@@ -42,12 +42,26 @@ export default function SoloGamePage() {
   // Setup socket
   useEffect(() => {
     const s = io({ path: '/api/socket.io' })
-    s.on('connect', () => setConnected(true))
+    s.on('connect', () => {
+      setConnected(true)
+      // Attempt reconnect on re-connect if we have a session token
+      const token = sessionStorage.getItem('batespoker_token')
+      if (token) {
+        s.emit('reconnect_session', { sessionToken: token })
+      }
+    })
     s.on('disconnect', () => setConnected(false))
 
-    s.on('solo_started', (data: { roomId: string; playerId: string }) => {
+    s.on('reconnected', (data: { playerId: string; roomId: string }) => {
+      setPlayerId(data.playerId)
+      setRoomId(data.roomId)
+      setStep('playing')
+    })
+
+    s.on('solo_started', (data: { roomId: string; playerId: string; sessionToken?: string }) => {
       setRoomId(data.roomId)
       setPlayerId(data.playerId)
+      if (data.sessionToken) sessionStorage.setItem('batespoker_token', data.sessionToken)
     })
 
     s.on('game_state', (state: GameState) => {

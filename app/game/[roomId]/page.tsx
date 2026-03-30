@@ -39,6 +39,13 @@ export default function MultiplayerGamePage() {
 
     s.on('connect', () => {
       setConnecting(false)
+      // Try to reconnect via session token first
+      const token = sessionStorage.getItem(`batespoker_room_${isNew ? 'new' : rawRoomId.toUpperCase()}`)
+        || sessionStorage.getItem('batespoker_mp_token')
+      if (token && !isNew) {
+        s.emit('reconnect_session', { sessionToken: token })
+        return
+      }
       // Auto-create or auto-join on connect
       if (isNew) {
         s.emit('create_room', { playerName: playerNameRef.current })
@@ -47,15 +54,25 @@ export default function MultiplayerGamePage() {
       }
     })
 
-    s.on('room_joined', (data: { roomId: string; playerId: string; isHost: boolean; players: { id: string; name: string }[] }) => {
+    s.on('reconnected', (data: { playerId: string; roomId: string }) => {
+      setActualRoomId(data.roomId)
+      setPlayerId(data.playerId)
+      setJoined(true)
+    })
+
+    s.on('room_joined', (data: { roomId: string; playerId: string; isHost: boolean; sessionToken?: string; players: { id: string; name: string }[] }) => {
       setActualRoomId(data.roomId)
       setPlayerId(data.playerId)
       setIsHost(data.isHost)
       setPlayers(data.players)
       setJoined(true)
-      // Update URL to reflect actual room code without remounting
+      if (data.sessionToken) {
+        sessionStorage.setItem('batespoker_mp_token', data.sessionToken)
+        sessionStorage.setItem(`batespoker_room_${data.roomId}`, data.sessionToken)
+      }
+      // Update URL to reflect actual room code without triggering a remount
       if (isNew) {
-        router.replace(`/game/${data.roomId}`)
+        window.history.replaceState(null, '', `/game/${data.roomId}`)
       }
     })
 
@@ -74,6 +91,9 @@ export default function MultiplayerGamePage() {
     })
 
     s.on('player_left', (data: { players: { id: string; name: string }[] }) => setPlayers(data.players))
+    s.on('player_disconnected', () => {
+      // Briefly show that someone disconnected — they have 45s to rejoin
+    })
     s.on('error', (e: { message: string }) => setError(e.message))
 
     setSocket(s)
