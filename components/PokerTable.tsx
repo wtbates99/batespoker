@@ -111,10 +111,10 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
   const timerCritical = turnSecondsLeft !== null && turnSecondsLeft <= 5
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 860, margin: '0 auto' }}>
+    <div className="poker-table-root" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 860, margin: '0 auto' }}>
 
       {/* Stage + round info bar */}
-      <div style={{
+      <div className="stage-info-bar" style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '6px 14px',
         background: 'rgba(12,14,9,0.9)',
@@ -149,7 +149,7 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
       </div>
 
       {/* TABLE WRAPPER — seats positioned relative to this, not inside the oval */}
-      <div style={{ position: 'relative', paddingBottom: '52%', userSelect: 'none' }}>
+      <div className="poker-table-outer" style={{ position: 'relative', paddingBottom: '52%', userSelect: 'none' }}>
 
         {/* THE OVAL TABLE */}
         <div style={{
@@ -405,6 +405,9 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
         </div>
       )}
 
+      {/* CONTROLS PANEL — fixed at bottom on mobile */}
+      <div className="controls-panel">
+
       {/* YOUR HOLE CARDS */}
       {currentPlayer && currentPlayer.holeCards.length > 0 && gameState.stage !== 'waiting' && (() => {
         const strength = getHandStrength(currentPlayer.holeCards, gameState.communityCards)
@@ -422,7 +425,7 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
             <div className="hand-label" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', minWidth: 72 }}>
               Your Hand
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="hand-hole-cards" style={{ display: 'flex', gap: 10 }}>
               {currentPlayer.holeCards.map((card, i) => (
                 <Card key={i} card={card} size="lg" />
               ))}
@@ -490,6 +493,8 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
           </div>
         </div>
       )}
+
+      </div>{/* end controls-panel */}
     </div>
   )
 }

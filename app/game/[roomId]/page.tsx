@@ -251,7 +251,7 @@ export default function MultiplayerGamePage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--vault-bg)', padding: '20px 16px 40px' }}>
+    <div className="game-page" style={{ minHeight: '100vh', background: 'var(--vault-bg)', padding: '20px 16px 40px' }}>
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginBottom: 20, padding: '8px 0',

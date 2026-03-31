@@ -772,6 +772,28 @@ code { color: var(--gold); font-size: 0.85em; }
 }
 
 /* ============================================================
+   CONTROLS PANEL (your hand + betting) — fixed on mobile
+   ============================================================ */
+.controls-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Prevent double-tap zoom on all interactive elements */
+button, input[type="range"] {
+  touch-action: manipulation;
+}
+
+/* ============================================================
+   STAGE INFO BAR
+   ============================================================ */
+.stage-info-bar {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+}
+
+/* ============================================================
    WINNER ANNOUNCEMENT
    ============================================================ */
 .winner-overlay {
@@ -860,37 +882,47 @@ code { color: var(--gold); font-size: 0.85em; }
   /* Your Hand row on tablet — compact but still show strength */
   .your-hand-row { gap: 12px; padding: 10px 16px; }
   .hand-label { min-width: 56px; }
+
+  /* Table taller on tablet */
+  .poker-table-outer { padding-bottom: 58% !important; }
 }
 
 /* ============================================================
    RESPONSIVE — MOBILE (≤480px)
    ============================================================ */
 @media (max-width: 480px) {
-  /* Cards */
-  .card-md { width: 36px; height: 52px; font-size: 0.58rem; padding: 2px; }
-  .card-lg { width: 50px; height: 72px; font-size: 0.78rem; padding: 2px; }
-  .card-sm { width: 26px; height: 38px; font-size: 0.48rem; padding: 2px; }
+  /* Cards — community cards on table */
+  .card-md { width: 34px; height: 50px; font-size: 0.56rem; padding: 2px; }
+  .card-lg { width: 46px; height: 66px; font-size: 0.72rem; padding: 2px; }
+  .card-sm { width: 24px; height: 35px; font-size: 0.46rem; padding: 2px; }
 
-  /* Seats */
-  .seat-portrait { width: 40px; height: 40px; font-size: 1.05rem; }
-  .seat-name { max-width: 60px; font-size: 0.52rem; }
-  .seat-chips { font-size: 0.58rem; }
+  /* Hole cards in your-hand panel — slightly larger for readability */
+  .hand-hole-cards .card-lg { width: 52px; height: 74px; font-size: 0.78rem; padding: 3px; }
 
-  /* Dialogue */
-  .dialogue-bubble { font-size: 0.68rem; max-width: 150px; }
+  /* Seats — compact but readable */
+  .seat-portrait { width: 38px; height: 38px; font-size: 1rem; }
+  .seat-name { max-width: 58px; font-size: 0.5rem; }
+  .seat-chips { font-size: 0.56rem; }
+  .seat-status-badge { font-size: 0.5rem; padding: 1px 3px; }
 
-  /* Betting controls */
+  /* Dialogue — smaller, clamped */
+  .dialogue-bubble { font-size: 0.64rem; max-width: 140px; padding: 4px 8px; }
+
+  /* Betting controls — full-width friendly */
   .kbd-hint { display: none; }
-  .betting-controls { padding: 12px 12px; gap: 10px; }
-  .action-buttons { gap: 6px; }
+  .betting-controls { padding: 10px 10px; gap: 8px; }
+  .action-buttons { gap: 5px; }
   .btn-action {
-    padding: 10px 10px;
-    min-height: 44px;
-    font-size: 0.65rem;
-    min-width: 64px;
+    flex: 1;
+    padding: 0 8px;
+    min-height: 48px;
+    font-size: 0.64rem;
+    min-width: 0;
+    letter-spacing: 0.06em;
   }
-  .raise-amount-display { font-size: 0.75rem; min-width: 48px; }
-  .raise-preset { padding: 8px 8px; font-size: 0.58rem; min-height: 40px; }
+  .raise-amount-display { font-size: 0.75rem; min-width: 44px; }
+  .raise-preset { padding: 8px 6px; font-size: 0.56rem; min-height: 40px; }
+  .raise-slider { min-width: 60px; }
 
   /* Nav */
   .vault-nav-inner { padding: 0 16px; }
@@ -899,11 +931,33 @@ code { color: var(--gold); font-size: 0.85em; }
   /* Modal */
   .modal-box { padding: 24px 20px; }
 
-  /* Your Hand row — hide label + strength bar, tighten spacing */
-  .your-hand-row { gap: 8px; padding: 10px 12px; }
+  /* Your Hand row — hide label + strength bar, tighten */
+  .your-hand-row { gap: 10px; padding: 8px 12px; border-radius: 0; border-left: none !important; border-right: none !important; }
   .hand-label { display: none; }
   .hand-strength { display: none; }
 
-  /* Raise slider min-width reduction */
-  .raise-slider { min-width: 60px; }
+  /* Table aspect ratio — taller on mobile for more seat breathing room */
+  .poker-table-outer { padding-bottom: 72% !important; }
+
+  /* Controls panel — fixed at bottom, always visible */
+  .controls-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: rgba(3,5,3,0.97);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border-h);
+    padding: 6px 10px;
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+
+  /* Space below table content so fixed panel doesn't cover it */
+  .poker-table-root { padding-bottom: 195px; }
+
+  /* Stage info bar — tighter on mobile */
+  .stage-info-bar { padding: 5px 10px !important; font-size: 0.62rem !important; }
 }
