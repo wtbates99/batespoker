@@ -759,6 +759,19 @@ code { color: var(--gold); font-size: 0.85em; }
 .form-error { font-size: 0.7rem; color: #e07070; margin-top: 4px; }
 
 /* ============================================================
+   YOUR HAND ROW
+   ============================================================ */
+.your-hand-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  background: rgba(8,12,6,0.95);
+  border-radius: 8px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ============================================================
    WINNER ANNOUNCEMENT
    ============================================================ */
 .winner-overlay {
@@ -843,6 +856,10 @@ code { color: var(--gold); font-size: 0.85em; }
   .raise-slider::-webkit-slider-thumb { width: 24px; height: 24px; }
   .raise-slider::-moz-range-thumb { width: 24px; height: 24px; }
   .raise-slider { height: 5px; }
+
+  /* Your Hand row on tablet — compact but still show strength */
+  .your-hand-row { gap: 12px; padding: 10px 16px; }
+  .hand-label { min-width: 56px; }
 }
 
 /* ============================================================
@@ -881,4 +898,12 @@ code { color: var(--gold); font-size: 0.85em; }
 
   /* Modal */
   .modal-box { padding: 24px 20px; }
+
+  /* Your Hand row — hide label + strength bar, tighten spacing */
+  .your-hand-row { gap: 8px; padding: 10px 12px; }
+  .hand-label { display: none; }
+  .hand-strength { display: none; }
+
+  /* Raise slider min-width reduction */
+  .raise-slider { min-width: 60px; }
 }

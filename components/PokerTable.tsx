@@ -412,16 +412,14 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
         const strengthColor = strength > 0.75 ? '#7de87d' : strength > 0.55 ? '#c9a84c' : strength > 0.35 ? '#c9843a' : '#e07070'
         const strengthLabel = strength > 0.87 ? 'Monster' : strength > 0.72 ? 'Strong' : strength > 0.55 ? 'Good' : strength > 0.38 ? 'Marginal' : strength > 0.22 ? 'Weak' : 'Trash'
         return (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 16,
-            padding: '12px 20px',
-            background: 'rgba(8,12,6,0.95)',
-            border: `1px solid ${isMyTurn ? 'rgba(201,168,76,0.4)' : 'var(--border)'}`,
-            borderRadius: 8,
-            boxShadow: isMyTurn ? '0 0 20px rgba(201,168,76,0.1)' : 'none',
-            transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
-          }}>
-            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', minWidth: 72 }}>
+          <div
+            className="your-hand-row"
+            style={{
+              border: `1px solid ${isMyTurn ? 'rgba(201,168,76,0.4)' : 'var(--border)'}`,
+              boxShadow: isMyTurn ? '0 0 20px rgba(201,168,76,0.1)' : 'none',
+            }}
+          >
+            <div className="hand-label" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', minWidth: 72 }}>
               Your Hand
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
@@ -430,7 +428,7 @@ export default function PokerTable({ gameState, currentPlayerId, onAction, dialo
               ))}
             </div>
             {/* Hand strength indicator */}
-            <div style={{ flex: 1, padding: '0 8px' }}>
+            <div className="hand-strength" style={{ flex: 1, padding: '0 8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>STRENGTH</span>
                 <span style={{ fontSize: '0.6rem', color: strengthColor, fontWeight: 700 }}>{strengthLabel}</span>
