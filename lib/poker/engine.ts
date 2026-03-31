@@ -53,6 +53,11 @@ export interface GameState {
   lastRaiseAmount: number
   round: number
   actionsThisRound: number
+  // Track which players have voluntarily acted since last raise (or since street start).
+  // A betting street ends only when every active non-allin player is in this list.
+  actedThisStreet: string[]
+  // Set to true inside processAction when an action increases s.currentBet.
+  lastActionWasRaise?: boolean
   lastActionPlayerId?: string
   lastActionType?: string
   lastActionAmount?: number
@@ -110,6 +115,8 @@ export function createGame(config: CreateGameConfig): GameState {
     lastRaiseAmount: bigBlind,
     round: 0,
     actionsThisRound: 0,
+    actedThisStreet: [],
+    lastActionWasRaise: false,
     bettingRoundComplete: false,
   }
 }
@@ -203,6 +210,8 @@ export function startRound(state: GameState): GameState {
   s.winners = undefined
   s.round += 1
   s.actionsThisRound = 0
+  s.actedThisStreet = []
+  s.lastActionWasRaise = false
   s.bettingRoundComplete = false
   s.lastActionPlayerId = undefined
   s.lastActionType = undefined
@@ -276,6 +285,8 @@ export function processAction(
   s.lastActionAmount = action.amount
   s.actionsThisRound++
 
+  const oldCurrentBet = s.currentBet
+
   switch (action.type) {
     case 'fold':
       player.status = 'folded'
@@ -339,6 +350,9 @@ export function processAction(
     }
   }
 
+  // Flag whether this action raised the current bet (triggers re-action from others)
+  s.lastActionWasRaise = s.currentBet > oldCurrentBet
+
   // Check if betting round is complete
   s = advanceAfterAction(s)
   return s
@@ -349,25 +363,39 @@ export function processAction(
 // ─────────────────────────────────────────────────────────────
 
 function advanceAfterAction(s: GameState): GameState {
-  const activePlayers = s.players.filter(p => p.status === 'active' || p.status === 'allin')
-  const foldedOrOut = s.players.filter(p => p.status === 'folded' || p.status === 'out')
+  if (!s.actedThisStreet) s.actedThisStreet = []
+  const actorId = s.lastActionPlayerId
 
-  // Only one player left
+  if (s.lastActionWasRaise && actorId) {
+    // A raise means every OTHER active non-allin player must re-act.
+    // Reset actedThisStreet to only the raiser.
+    s.actedThisStreet = [actorId]
+  } else if (actorId && !s.actedThisStreet.includes(actorId)) {
+    s.actedThisStreet = [...s.actedThisStreet, actorId]
+  }
+  s.lastActionWasRaise = false
+
+  // Only one non-folded/out player left → award pot immediately
   if (s.players.filter(p => p.status !== 'folded' && p.status !== 'out').length <= 1) {
     return resolveShowdown(s)
   }
 
-  // Check if betting round is complete
-  const activeNonAllin = activePlayers.filter(p => p.status === 'active')
-  const allCalled = activeNonAllin.every(p => p.currentBet === s.currentBet)
-  const everyoneActed = s.actionsThisRound >= activeNonAllin.length || activeNonAllin.length === 0
+  // Players who can still voluntarily act this street
+  const activeNonAllin = s.players.filter(p => p.status === 'active')
 
-  if (allCalled && everyoneActed && activeNonAllin.length > 0) {
+  if (activeNonAllin.length === 0) {
+    // Everyone is all-in — run out the board
     s.bettingRoundComplete = true
     return advanceStage(s)
   }
-  if (activeNonAllin.length === 0) {
-    // All remaining players are all-in
+
+  // Street ends when every active non-allin player has acted since the last raise
+  // AND all their bets are equal (allCalled covers the case where the last raise
+  // hasn't been called by someone yet).
+  const allActed = activeNonAllin.every(p => s.actedThisStreet.includes(p.id))
+  const allCalled = activeNonAllin.every(p => p.currentBet === s.currentBet)
+
+  if (allActed && allCalled) {
     s.bettingRoundComplete = true
     return advanceStage(s)
   }
@@ -397,6 +425,8 @@ function advanceStage(s: GameState): GameState {
   s.currentBet = 0
   s.minRaise = s.bigBlind
   s.actionsThisRound = 0
+  s.actedThisStreet = []
+  s.lastActionWasRaise = false
   s.bettingRoundComplete = false
 
   switch (s.stage) {
@@ -654,6 +684,8 @@ export function prepareNextRound(state: GameState): GameState {
   s.winners = undefined
   s.dialogue = undefined
   s.communityCards = []
+  s.actedThisStreet = []
+  s.lastActionWasRaise = false
   for (const p of s.players) {
     p.holeCards = []
     p.handResult = undefined
