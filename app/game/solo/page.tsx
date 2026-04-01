@@ -107,7 +107,7 @@ export default function SoloGamePage() {
   // Setup screen
   if (step === 'setup') {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--vault-bg)', padding: '80px 24px 40px' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--vault-bg)', padding: '72px 16px 40px' }}>
         {/* Nav */}
         <nav className="vault-nav">
           <div className="vault-nav-inner">
@@ -143,7 +143,7 @@ export default function SoloGamePage() {
               value={playerName}
               onChange={e => setPlayerName(e.target.value)}
               placeholder="Your name"
-              style={{ maxWidth: 280 }}
+              style={{ width: '100%', maxWidth: 320 }}
             />
           </div>
 
@@ -231,7 +231,7 @@ export default function SoloGamePage() {
 
           <button
             className="btn-primary"
-            style={{ maxWidth: 300, fontSize: '0.8rem', letterSpacing: '0.15em', padding: '14px' }}
+            style={{ width: '100%', maxWidth: 320, fontSize: '0.8rem', letterSpacing: '0.15em', padding: '16px 14px' }}
             onClick={startGame}
             disabled={selectedOpponents.length === 0}
           >

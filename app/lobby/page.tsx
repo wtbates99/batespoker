@@ -41,7 +41,7 @@ export default function LobbyPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--vault-bg)', padding: '80px 24px 40px' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--vault-bg)', padding: '72px 20px 48px' }}>
       <nav className="vault-nav">
         <div className="vault-nav-inner">
           <Link href="/" className="nav-logo">♠ BATESPOKER</Link>
@@ -52,7 +52,7 @@ export default function LobbyPage() {
       </nav>
 
       <div style={{ maxWidth: 720, margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: 56 }}>
+        <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <p style={{ fontSize: '0.65rem', letterSpacing: '0.2em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
             ♥ multiplayer ♥
           </p>
@@ -65,7 +65,7 @@ export default function LobbyPage() {
         </div>
 
         {/* Name */}
-        <div style={{ marginBottom: 40 }}>
+        <div style={{ marginBottom: 28 }}>
           <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-dim)', marginBottom: 8 }}>
             Your Name
           </label>
@@ -73,11 +73,11 @@ export default function LobbyPage() {
             className="form-input"
             value={playerName}
             onChange={e => setPlayerName(e.target.value)}
-            style={{ maxWidth: 280 }}
+            style={{ width: '100%', maxWidth: 320 }}
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 48 }}>
+        <div className="lobby-grid">
           {/* Create room */}
           <div style={{
             background: 'var(--vault-panel)',
@@ -129,6 +129,8 @@ export default function LobbyPage() {
                   fontSize: '0.72rem',
                   fontWeight: 700,
                   padding: '0 16px',
+                  minHeight: 44,
+                  touchAction: 'manipulation',
                   background: 'rgba(201,168,76,0.12)',
                   border: '1px solid rgba(201,168,76,0.35)',
                   color: 'var(--gold)',
@@ -175,7 +177,9 @@ export default function LobbyPage() {
                   style={{
                     fontFamily: 'var(--mono)',
                     fontSize: '0.65rem',
-                    padding: '5px 14px',
+                    padding: '8px 14px',
+                    minHeight: 40,
+                    touchAction: 'manipulation',
                     background: 'rgba(201,168,76,0.1)',
                     border: '1px solid rgba(201,168,76,0.3)',
                     color: 'var(--gold)',

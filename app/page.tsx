@@ -168,7 +168,7 @@ export default function HomePage() {
               <Link href="/lobby" className="nav-link">Multiplayer</Link>
               {user ? (
                 <>
-                  <span className="nav-link" style={{ color: 'var(--gold)', cursor: 'default' }}>
+                  <span className="nav-link nav-username" style={{ color: 'var(--gold)', cursor: 'default' }}>
                     {user.username}
                   </span>
                   <button className="nav-link" onClick={handleLogout}>Logout</button>
@@ -205,9 +205,9 @@ export default function HomePage() {
             pointerEvents: 'none',
           }} />
 
-          <div style={{ position: 'relative', zIndex: 3, textAlign: 'center', padding: '0 24px', maxWidth: 700 }}>
+          <div className="hero-content" style={{ position: 'relative', zIndex: 3, textAlign: 'center', padding: '0 20px', maxWidth: 700 }}>
             {/* Rune */}
-            <div style={{
+            <div className="hero-rune" style={{
               fontSize: '3rem',
               letterSpacing: '0.5em',
               color: 'var(--gold)',
@@ -230,7 +230,7 @@ export default function HomePage() {
               THE VAULT
             </h1>
 
-            <p style={{
+            <p className="hero-subtitle" style={{
               fontSize: '0.85rem',
               letterSpacing: '0.2em',
               color: 'var(--text-dim)',
@@ -241,7 +241,7 @@ export default function HomePage() {
             </p>
 
             {/* CTAs */}
-            <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div className="hero-ctas" style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
               <Link href="/game/solo" style={{
                 fontFamily: 'var(--mono)',
                 fontSize: '0.8rem',
@@ -332,7 +332,7 @@ export default function HomePage() {
         </section>
 
         {/* CHARACTERS */}
-        <section style={{ padding: '100px 24px', maxWidth: 1100, margin: '0 auto' }}>
+        <section className="chars-section" style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
             <p style={{ fontSize: '0.65rem', letterSpacing: '0.2em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 12 }}>
               ♠ residents of the vault ♠
@@ -432,8 +432,7 @@ export default function HomePage() {
         </section>
 
         {/* FEATURES */}
-        <section style={{
-          padding: '80px 24px 120px',
+        <section className="features-section" style={{
           background: 'linear-gradient(to bottom, transparent, rgba(10,32,16,0.06), transparent)',
         }}>
           <div style={{ maxWidth: 900, margin: '0 auto' }}>

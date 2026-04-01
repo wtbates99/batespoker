@@ -794,6 +794,31 @@ button, input[type="range"] {
 }
 
 /* ============================================================
+   LOBBY GRID (create + join room)
+   ============================================================ */
+.lobby-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+/* ============================================================
+   HOME PAGE SECTIONS
+   ============================================================ */
+.chars-section   { padding: 100px 24px; }
+.features-section { padding: 80px 24px 120px; }
+
+/* NAV — prevent long username from overflowing */
+.nav-username {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+/* ============================================================
    WINNER ANNOUNCEMENT
    ============================================================ */
 .winner-overlay {
@@ -855,6 +880,22 @@ button, input[type="range"] {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ============================================================
+   RESPONSIVE — WIDE MOBILE / SMALL TABLET (≤640px)
+   ============================================================ */
+@media (max-width: 640px) {
+  /* Lobby: stack create/join vertically */
+  .lobby-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  /* Section padding reduction on small screens */
+  .chars-section    { padding: 64px 20px; }
+  .features-section { padding: 48px 20px 80px; }
 }
 
 /* ============================================================
@@ -960,4 +1001,19 @@ button, input[type="range"] {
 
   /* Stage info bar — tighter on mobile */
   .stage-info-bar { padding: 5px 10px !important; font-size: 0.62rem !important; }
+
+  /* Home page — further reduce section padding */
+  .chars-section    { padding: 48px 16px; }
+  .features-section { padding: 36px 16px 60px; }
+
+  /* Hero — tighter rune and subtitle */
+  .hero-rune     { font-size: 2rem !important; letter-spacing: 0.3em !important; margin-bottom: 12px !important; }
+  .hero-subtitle { font-size: 0.72rem !important; letter-spacing: 0.1em !important; margin-bottom: 32px !important; }
+
+  /* Hero CTA buttons — full width on small screens */
+  .hero-ctas         { flex-direction: column; gap: 12px; }
+  .hero-ctas a       { text-align: center; width: 100%; box-sizing: border-box; padding: 16px !important; }
+
+  /* Nav username — show only first 8 chars */
+  .nav-username { max-width: 72px; font-size: 0.6rem; }
 }
