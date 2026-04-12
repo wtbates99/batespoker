@@ -4,10 +4,6 @@
 
 A self-hosted, open-source Texas Hold'em poker application inspired by **Poker Night at the Inventory**. Play against four degenerate AI characters with distinct personalities, or host a private table and deal in your friends in real-time.
 
-**Live demo:** [poker.palanbates.com](https://poker.palanbates.com)
-
----
-
 ## Features
 
 - **Solo vs AI** — Four unique opponents with adjustable difficulty and witty dialogue
@@ -66,24 +62,6 @@ Requires Node 20+.
 | `PORT` | No | `3000` | HTTP port |
 | `NODE_ENV` | No | `development` | Set to `production` in prod |
 
-### docker-compose.yml (minimal)
-
-```yaml
-services:
-  batespoker:
-    image: ghcr.io/wtbates99/batespoker:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - JWT_SECRET=your-very-secure-secret-here
-      - NODE_ENV=production
-    volumes:
-      - ./data:/app/.poker-data
-    restart: unless-stopped
-```
-
----
-
 ## Architecture
 
 ```
@@ -112,12 +90,6 @@ npm run lint      # ESLint
 npm run typecheck # tsc --noEmit
 npm run build     # production build
 ```
-
----
-
-## CI/CD
-
-Pushing to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/wtbates99/batespoker:latest`.
 
 ---
 

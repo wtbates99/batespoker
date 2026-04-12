@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     title: '♠ BATESPOKER — The Vault',
     description: 'Underground poker club. Solo vs AI or multiplayer rooms. Free forever.',
     type: 'website',
-    url: process.env.NEXT_PUBLIC_APP_URL ?? 'https://poker.palanbates.com',
+    url: process.env.NEXT_PUBLIC_APP_URL,
   },
   twitter: {
     card: 'summary',

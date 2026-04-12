@@ -474,8 +474,8 @@ export default function HomePage() {
               ♠ open source ♠
             </div>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', lineHeight: 1.8, marginBottom: 28 }}>
-              This is a demo hosted at <code>poker.palanbates.com</code>.
-              The full source is on GitHub — fork it, self-host it, run your own vault.
+              The full source is on GitHub.
+              Fork it, self-host it, run your own vault.
             </p>
             <a
               href="https://github.com/wtbates99/batespoker"
